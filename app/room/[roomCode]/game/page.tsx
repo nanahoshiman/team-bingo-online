@@ -1192,6 +1192,7 @@ export default function GamePage() {
 
   return (
     <main
+      className="game-main"
       style={{
         minHeight: "100vh",
         padding: 20,
@@ -1222,9 +1223,83 @@ export default function GamePage() {
               0 0 10px rgba(255,255,255,0.45);
           }
         }
+
+        @media (max-width: 700px) {
+          .game-main {
+            padding: 10px !important;
+            align-items: start;
+          }
+
+          .game-shell {
+            padding: 16px 12px !important;
+            border-radius: 16px !important;
+          }
+
+          .responsive-team-grid,
+          .responsive-board-grid {
+            grid-template-columns: 1fr !important;
+          }
+
+          .responsive-team-item[data-own="true"],
+          .responsive-board-item[data-own="true"] {
+            order: 0;
+          }
+
+          .responsive-team-item[data-own="false"],
+          .responsive-board-item[data-own="false"] {
+            order: 1;
+          }
+
+          .team-members-card {
+            padding: 12px !important;
+          }
+
+          .team-members-title {
+            margin: 4px 0 8px !important;
+            font-size: 20px !important;
+          }
+
+          .team-member-row {
+            gap: 10px !important;
+            align-items: center !important;
+          }
+
+          .team-member-name {
+            min-width: 0;
+            overflow-wrap: anywhere;
+          }
+
+          .team-member-status {
+            flex-shrink: 0;
+            white-space: nowrap;
+            font-size: 14px;
+          }
+
+          .character-board {
+            padding: 10px !important;
+          }
+
+          .character-board[data-own="true"] {
+            border-width: 8px !important;
+          }
+
+          .character-board[data-own="false"] {
+            border-width: 3px !important;
+          }
+
+          .character-board-title {
+            margin: 4px 0 8px !important;
+            font-size: 20px !important;
+          }
+
+          .character-board-grid {
+            gap: 5px !important;
+          }
+        }
       `}</style>
 
       <section
+        className="game-shell"
         style={{
           width: "100%",
           maxWidth: 1180,
@@ -1268,6 +1343,7 @@ export default function GamePage() {
         </header>
 
         <div
+          className="responsive-team-grid"
           style={{
             display: "grid",
             gridTemplateColumns:
@@ -1275,6 +1351,10 @@ export default function GamePage() {
             gap: 12,
           }}
         >
+          <div
+            className="responsive-team-item"
+            data-own={myPlayer?.team === "red"}
+          >
           <TeamMembers
             title="🔴 赤チーム"
             players={redPlayers}
@@ -1288,7 +1368,12 @@ export default function GamePage() {
             backgroundColor="#fff7f7"
             titleColor="#b71c1c"
           />
+          </div>
 
+          <div
+            className="responsive-team-item"
+            data-own={myPlayer?.team === "blue"}
+          >
           <TeamMembers
             title="🔵 青チーム"
             players={bluePlayers}
@@ -1302,6 +1387,7 @@ export default function GamePage() {
             backgroundColor="#f5f9ff"
             titleColor="#0d47a1"
           />
+          </div>
         </div>
 
         {boardData === null ? (
@@ -1548,6 +1634,7 @@ export default function GamePage() {
               }}
             >
               <div
+                className="responsive-board-grid"
                 style={{
                   display: "grid",
                   gridTemplateColumns:
@@ -1555,6 +1642,10 @@ export default function GamePage() {
                   gap: 16,
                 }}
               >
+                <div
+                  className="responsive-board-item"
+                  data-own={myPlayer?.team === "red"}
+                >
                 <CharacterBoard
                   title="🔴 赤チーム"
                   team="red"
@@ -1597,7 +1688,12 @@ export default function GamePage() {
                     selectCharacter
                   }
                 />
+                </div>
 
+                <div
+                  className="responsive-board-item"
+                  data-own={myPlayer?.team === "blue"}
+                >
                 <CharacterBoard
                   title="🔵 青チーム"
                   team="blue"
@@ -1640,6 +1736,7 @@ export default function GamePage() {
                     selectCharacter
                   }
                 />
+                </div>
               </div>
             </section>
 
@@ -1933,6 +2030,7 @@ function TeamMembers({
 }) {
   return (
     <section
+      className="team-members-card"
       style={{
         padding: 16,
         border: `2px solid ${borderColor}`,
@@ -1941,6 +2039,7 @@ function TeamMembers({
       }}
     >
       <h2
+        className="team-members-title"
         style={{
           color: titleColor,
           textAlign: "center",
@@ -1952,6 +2051,7 @@ function TeamMembers({
       {players.map(
         (player) => (
           <div
+            className="team-member-row"
             key={
               player.id
             }
@@ -1970,7 +2070,7 @@ function TeamMembers({
                 "space-between",
             }}
           >
-            <span>
+            <span className="team-member-name">
               {
                 player.player_name
               }
@@ -1986,7 +2086,7 @@ function TeamMembers({
                 : ""}
             </span>
 
-            <span>
+            <span className="team-member-status">
               {readyPlayerIds.has(
                 player.id
               )
@@ -2041,6 +2141,8 @@ function CharacterBoard({
 
   return (
     <section
+      className="character-board"
+      data-own={isOwnBoard}
       style={{
         padding: 16,
         border: `${isOwnBoard ? 12 : 4}px solid ${borderColor}`,
@@ -2061,6 +2163,7 @@ function CharacterBoard({
       }}
     >
       <h2
+        className="character-board-title"
         style={{
           textAlign: "center",
         }}
@@ -2069,6 +2172,7 @@ function CharacterBoard({
       </h2>
 
       <div
+        className="character-board-grid"
         style={{
           display: "grid",
           gridTemplateColumns:
@@ -2130,21 +2234,25 @@ function CharacterBoard({
                   aspectRatio:
                     "1 / 1",
                   padding: 4,
-                  border:
-                    selected
-                      ? "4px solid #ff9800"
-                      : inBingo
-                        ? "4px solid #f6b800"
-                        : inReach
-                          ? "4px solid #ffd400"
-                          : `2px solid ${borderColor}`,
+                 border:
+  selected
+  ? `4px solid ${team === "red" ? "#e53935" : "#1e88e5"}`
+    : inBingo
+      ? `5px solid ${
+          team === "red" ? "#8b0000" : "#003b8f"
+        }`
+      : inReach
+        ? "4px solid #ffd400"
+        : `2px solid ${borderColor}`,
                   borderRadius:
                     8,
                   overflow:
                     "hidden",
                   backgroundColor:
                     selected
-                      ? "#fff7e6"
+  ? team === "red"
+    ? "#ffe5e5"
+    : "#e5f0ff"
                       : "white",
                   cursor:
                     clickable
@@ -2222,18 +2330,7 @@ function CharacterBoard({
                   />
                 )}
 
-                {inBingo && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      background:
-                        "linear-gradient(135deg, rgba(255,215,0,0.20), rgba(255,193,7,0.48))",
-                      boxShadow: "inset 0 0 18px rgba(255,193,7,0.95)",
-                      pointerEvents: "none",
-                    }}
-                  />
-                )}
+               
 
                 {selected &&
                   !claimed &&
