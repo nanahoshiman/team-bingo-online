@@ -7,7 +7,7 @@ import { characters } from "@/lib/characters";
 
 type Team = "red" | "blue";
 type BoardSize = 3 | 5 | 7;
-type MatchStatus = "picking" | "in_match" | "resolving";
+type MatchStatus = "selecting_players" | "picking" | "in_match" | "resolving";
 
 type Player = {
   id: string;
@@ -28,6 +28,8 @@ type RoomData = {
   match_status: MatchStatus | null;
   last_red_picks: unknown;
   last_blue_picks: unknown;
+  active_red_player_ids: unknown;
+  active_blue_player_ids: unknown;
 };
 
 type MatchResult = {
@@ -79,6 +81,7 @@ function isBoardData(value: unknown): value is BoardData {
 
 function isMatchStatus(value: unknown): value is MatchStatus {
   return (
+    value === "selecting_players" ||
     value === "picking" ||
     value === "in_match" ||
     value === "resolving"
@@ -206,6 +209,21 @@ export default function GamePage() {
   const [lastBluePicks, setLastBluePicks] =
     useState<string[]>([]);
 
+  const [activeRedPlayerIds, setActiveRedPlayerIds] =
+    useState<string[]>([]);
+
+  const [activeBluePlayerIds, setActiveBluePlayerIds] =
+    useState<string[]>([]);
+
+  const [draftRedPlayerIds, setDraftRedPlayerIds] =
+    useState<string[]>([]);
+
+  const [draftBluePlayerIds, setDraftBluePlayerIds] =
+    useState<string[]>([]);
+
+  const [savingActivePlayers, setSavingActivePlayers] =
+    useState(false);
+
   const [matchResults, setMatchResults] =
     useState<MatchResult[]>([]);
 
@@ -244,7 +262,7 @@ export default function GamePage() {
     const { data, error } = await supabase
       .from("rooms")
       .select(
-        "board_size, board_data, match_status, last_red_picks, last_blue_picks"
+        "board_size, board_data, match_status, last_red_picks, last_blue_picks, active_red_player_ids, active_blue_player_ids"
       )
       .eq("room_code", roomCode)
       .maybeSingle();
@@ -274,6 +292,8 @@ export default function GamePage() {
 
     setLastRedPicks(stringArray(room.last_red_picks));
     setLastBluePicks(stringArray(room.last_blue_picks));
+    setActiveRedPlayerIds(stringArray(room.active_red_player_ids));
+    setActiveBluePlayerIds(stringArray(room.active_blue_player_ids));
   }
 
   async function loadMatchResults() {
@@ -351,7 +371,7 @@ export default function GamePage() {
         async (payload) => {
           const nextStatus = payload.new.match_status;
 
-          if (nextStatus === "picking") {
+          if (nextStatus === "picking" || nextStatus === "selecting_players") {
             // 勝敗登録が終わって次の試合に入った瞬間、
             // 全ブラウザで前試合のピック状態を即クリアする。
             setCharacterPicks([]);
@@ -483,9 +503,31 @@ export default function GamePage() {
     [characterPicks]
   );
 
+  const activePlayerIds = useMemo(
+    () => new Set([...activeRedPlayerIds, ...activeBluePlayerIds]),
+    [activeRedPlayerIds, activeBluePlayerIds]
+  );
+
+  const activePlayers = useMemo(
+    () => players.filter((player) => activePlayerIds.has(player.id)),
+    [players, activePlayerIds]
+  );
+
+  const amActivePlayer =
+    !!myPlayerId && activePlayerIds.has(myPlayerId);
+
+  const readyActivePlayerCount = activePlayers.filter((player) =>
+    readyPlayerIds.has(player.id)
+  ).length;
+
+  const remainingActivePlayerCount = Math.max(
+    0,
+    activePlayers.length - readyActivePlayerCount
+  );
+
   const allPlayersReady =
-    players.length > 0 &&
-    players.every((player) =>
+    activePlayers.length === 4 &&
+    activePlayers.every((player) =>
       readyPlayerIds.has(player.id)
     );
 
@@ -567,6 +609,32 @@ export default function GamePage() {
     }
   }, [myPlayer, amHost, amLeader]);
 
+  useEffect(() => {
+    if (matchStatus !== "selecting_players") return;
+
+    setDraftRedPlayerIds(
+      activeRedPlayerIds.length > 0
+        ? activeRedPlayerIds.slice(0, 2)
+        : redPlayers.length === 2
+          ? redPlayers.map((player) => player.id)
+          : []
+    );
+
+    setDraftBluePlayerIds(
+      activeBluePlayerIds.length > 0
+        ? activeBluePlayerIds.slice(0, 2)
+        : bluePlayers.length === 2
+          ? bluePlayers.map((player) => player.id)
+          : []
+    );
+  }, [
+    matchStatus,
+    activeRedPlayerIds,
+    activeBluePlayerIds,
+    redPlayers,
+    bluePlayers,
+  ]);
+
   async function generateBoards() {
     if (!amHost || generating) return;
 
@@ -601,14 +669,27 @@ export default function GamePage() {
         blue: makeBoard(boardSize),
       };
 
+      const isFourPlayerGame = players.length === 4;
+      const initialRedPlayerIds = isFourPlayerGame
+        ? redPlayers.map((player) => player.id)
+        : [];
+      const initialBluePlayerIds = isFourPlayerGame
+        ? bluePlayers.map((player) => player.id)
+        : [];
+      const nextMatchStatus: MatchStatus = isFourPlayerGame
+        ? "picking"
+        : "selecting_players";
+
       const { error } = await supabase
         .from("rooms")
         .update({
           board_size: boardSize,
           board_data: nextBoardData,
-          match_status: "picking",
+          match_status: nextMatchStatus,
           last_red_picks: [],
           last_blue_picks: [],
+          active_red_player_ids: initialRedPlayerIds,
+          active_blue_player_ids: initialBluePlayerIds,
         })
         .eq(
           "room_code",
@@ -629,11 +710,71 @@ export default function GamePage() {
       }
 
       setBoardData(nextBoardData);
-      setMatchStatus("picking");
+      setMatchStatus(nextMatchStatus);
       setLastRedPicks([]);
       setLastBluePicks([]);
+      setActiveRedPlayerIds(initialRedPlayerIds);
+      setActiveBluePlayerIds(initialBluePlayerIds);
     } finally {
       setGenerating(false);
+    }
+  }
+
+  function toggleDraftPlayer(team: Team, playerId: string) {
+    if (!amHost || matchStatus !== "selecting_players") return;
+
+    const teamPlayers = team === "red" ? redPlayers : bluePlayers;
+    if (!teamPlayers.some((player) => player.id === playerId)) return;
+
+    const current = team === "red" ? draftRedPlayerIds : draftBluePlayerIds;
+    const setter = team === "red" ? setDraftRedPlayerIds : setDraftBluePlayerIds;
+
+    if (current.includes(playerId)) {
+      setter(current.filter((id) => id !== playerId));
+      return;
+    }
+
+    if (current.length >= 2) return;
+    setter([...current, playerId]);
+  }
+
+  async function confirmActivePlayers() {
+    if (
+      !amHost ||
+      savingActivePlayers ||
+      matchStatus !== "selecting_players" ||
+      draftRedPlayerIds.length !== 2 ||
+      draftBluePlayerIds.length !== 2
+    ) {
+      return;
+    }
+
+    setSavingActivePlayers(true);
+
+    try {
+      const { error } = await supabase
+        .from("rooms")
+        .update({
+          active_red_player_ids: draftRedPlayerIds,
+          active_blue_player_ids: draftBluePlayerIds,
+          match_status: "picking",
+        })
+        .eq("room_code", roomCode)
+        .eq("match_status", "selecting_players");
+
+      if (error) {
+        console.error("対戦者保存エラー:", error);
+        alert(`対戦者の保存に失敗しました。\n${error.message ?? ""}`);
+        return;
+      }
+
+      setActiveRedPlayerIds(draftRedPlayerIds);
+      setActiveBluePlayerIds(draftBluePlayerIds);
+      setMatchStatus("picking");
+      setSelectedCharacterId(null);
+      await loadRoom();
+    } finally {
+      setSavingActivePlayers(false);
     }
   }
 
@@ -643,6 +784,7 @@ export default function GamePage() {
     if (
       !myPlayer ||
       !boardData ||
+      !amActivePlayer ||
       myPick ||
       allPlayersReady ||
       matchStatus !== "picking"
@@ -699,6 +841,7 @@ export default function GamePage() {
       !myPlayer.team ||
       !selectedCharacterId ||
       !boardData ||
+      !amActivePlayer ||
       savingPick ||
       myPick ||
       matchStatus !== "picking"
@@ -793,7 +936,7 @@ export default function GamePage() {
 
       if (
         !readyCountError &&
-        (readyCount ?? 0) >= players.length
+        (readyCount ?? 0) >= activePlayers.length
       ) {
         const { error: startError } =
           await supabase
@@ -1068,6 +1211,17 @@ export default function GamePage() {
         return;
       }
 
+      const isFourPlayerGame = players.length === 4;
+      const nextRedPlayerIds = isFourPlayerGame
+        ? redPlayers.map((player) => player.id)
+        : [];
+      const nextBluePlayerIds = isFourPlayerGame
+        ? bluePlayers.map((player) => player.id)
+        : [];
+      const nextMatchStatus: MatchStatus = isFourPlayerGame
+        ? "picking"
+        : "selecting_players";
+
       const { error: roomError } =
         await supabase
           .from("rooms")
@@ -1076,8 +1230,10 @@ export default function GamePage() {
               currentRedPicks,
             last_blue_picks:
               currentBluePicks,
+            active_red_player_ids: nextRedPlayerIds,
+            active_blue_player_ids: nextBluePlayerIds,
             match_status:
-              "picking",
+              nextMatchStatus,
           })
           .eq(
             "room_code",
@@ -1160,6 +1316,8 @@ export default function GamePage() {
         match_status: "picking",
         last_red_picks: [],
         last_blue_picks: [],
+        active_red_player_ids: [],
+        active_blue_player_ids: [],
       })
       .eq("room_code", roomCode);
 
@@ -1361,6 +1519,8 @@ export default function GamePage() {
             readyPlayerIds={
               readyPlayerIds
             }
+            activePlayerIds={activePlayerIds}
+            matchStatus={matchStatus}
             myPlayerId={
               myPlayerId
             }
@@ -1380,6 +1540,8 @@ export default function GamePage() {
             readyPlayerIds={
               readyPlayerIds
             }
+            activePlayerIds={activePlayerIds}
+            matchStatus={matchStatus}
             myPlayerId={
               myPlayerId
             }
@@ -1482,6 +1644,88 @@ export default function GamePage() {
           )
         ) : (
           <>
+            {!gameFinished && matchStatus === "selecting_players" && (
+              <section
+                style={{
+                  marginTop: 24,
+                  padding: 20,
+                  borderRadius: 16,
+                  border: "2px solid #6a1b9a",
+                  backgroundColor: "#fbf5fd",
+                }}
+              >
+                <h2 style={{ textAlign: "center", marginTop: 0 }}>
+                  ⚔️ この試合の対戦者を選択
+                </h2>
+
+                {amHost ? (
+                  <>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                        gap: 14,
+                      }}
+                    >
+                      <PlayerSelector
+                        title="🔴 赤チームから2人"
+                        players={redPlayers}
+                        selectedIds={draftRedPlayerIds}
+                        onToggle={(playerId) => toggleDraftPlayer("red", playerId)}
+                        accentColor="#d32f2f"
+                      />
+                      <PlayerSelector
+                        title="🔵 青チームから2人"
+                        players={bluePlayers}
+                        selectedIds={draftBluePlayerIds}
+                        onToggle={(playerId) => toggleDraftPlayer("blue", playerId)}
+                        accentColor="#1565c0"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={confirmActivePlayers}
+                      disabled={
+                        savingActivePlayers ||
+                        draftRedPlayerIds.length !== 2 ||
+                        draftBluePlayerIds.length !== 2
+                      }
+                      style={{
+                        width: "100%",
+                        marginTop: 16,
+                        padding: 15,
+                        border: "none",
+                        borderRadius: 12,
+                        backgroundColor: "#6a1b9a",
+                        color: "white",
+                        fontSize: 17,
+                        fontWeight: 900,
+                        cursor:
+                          !savingActivePlayers &&
+                          draftRedPlayerIds.length === 2 &&
+                          draftBluePlayerIds.length === 2
+                            ? "pointer"
+                            : "not-allowed",
+                        opacity:
+                          !savingActivePlayers &&
+                          draftRedPlayerIds.length === 2 &&
+                          draftBluePlayerIds.length === 2
+                            ? 1
+                            : 0.45,
+                      }}
+                    >
+                      {savingActivePlayers
+                        ? "保存中..."
+                        : "✓ この4人でキャラ選択へ"}
+                    </button>
+                  </>
+                ) : (
+                  <StatusBox text="ホストがこの試合の対戦者を選択しています..." />
+                )}
+              </section>
+            )}
+
             {gameFinished && winningTeam && (
               <section
                 style={{
@@ -1628,6 +1872,48 @@ export default function GamePage() {
                 </div>
               )}
 
+            {!gameFinished &&
+              matchStatus === "picking" &&
+              activePlayers.length === 4 && (
+                <section
+                  style={{
+                    marginTop: 24,
+                    padding: 16,
+                    borderRadius: 16,
+                    border: "2px solid #6a1b9a",
+                    backgroundColor: "#fbf5fd",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 1000,
+                    }}
+                  >
+                    🎮 キャラ選択 {readyActivePlayerCount}/4人完了
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 6,
+                      color: remainingActivePlayerCount === 0 ? "#188038" : "#666",
+                      fontWeight: 900,
+                    }}
+                  >
+                    {remainingActivePlayerCount > 0
+                      ? `あと${remainingActivePlayerCount}人の選択待ち`
+                      : "全員の選択が完了しました"}
+                  </div>
+                </section>
+              )}
+
+            {!gameFinished &&
+              amActivePlayer &&
+              myPick &&
+              (matchStatus === "picking" || matchStatus === "in_match") && (
+                <MyCharacterCard pick={myPick} inMatch={matchStatus === "in_match"} />
+              )}
+
             <section
               style={{
                 marginTop: 26,
@@ -1673,6 +1959,7 @@ export default function GamePage() {
                     myPlayer?.team ===
                       "red" &&
                     !gameFinished &&
+                    amActivePlayer &&
                     !myPick &&
                     !allPlayersReady &&
                     matchStatus ===
@@ -1721,6 +2008,7 @@ export default function GamePage() {
                     myPlayer?.team ===
                       "blue" &&
                     !gameFinished &&
+                    amActivePlayer &&
                     !myPick &&
                     !allPlayersReady &&
                     matchStatus ===
@@ -1766,8 +2054,10 @@ export default function GamePage() {
                     キャラ選択
                   </h2>
 
-                  {myPick ? (
-                    <StatusBox text="✓ キャラ選択完了" />
+                  {!amActivePlayer ? (
+                    <StatusBox text="この試合は待機です。対戦者4人のキャラ選択をお待ちください" />
+                  ) : myPick ? (
+                    <StatusBox text="✓ キャラ選択完了。使用キャラは上の『今回あなたが使用するキャラ』に表示されています" />
                   ) : selectedCharacterId ? (
                     <>
                       <div
@@ -2011,10 +2301,80 @@ export default function GamePage() {
   );
 }
 
+function PlayerSelector({
+  title,
+  players,
+  selectedIds,
+  onToggle,
+  accentColor,
+}: {
+  title: string;
+  players: Player[];
+  selectedIds: string[];
+  onToggle: (playerId: string) => void;
+  accentColor: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: 14,
+        borderRadius: 14,
+        border: `2px solid ${accentColor}`,
+        backgroundColor: "white",
+      }}
+    >
+      <div
+        style={{
+          marginBottom: 10,
+          textAlign: "center",
+          fontWeight: 1000,
+          color: accentColor,
+        }}
+      >
+        {title}（{selectedIds.length}/2）
+      </div>
+
+      <div style={{ display: "grid", gap: 8 }}>
+        {players.map((player) => {
+          const selected = selectedIds.includes(player.id);
+          const disabled = !selected && selectedIds.length >= 2;
+
+          return (
+            <button
+              key={player.id}
+              type="button"
+              onClick={() => onToggle(player.id)}
+              disabled={disabled}
+              style={{
+                padding: "12px 10px",
+                borderRadius: 10,
+                border: selected
+                  ? `3px solid ${accentColor}`
+                  : "1px solid #ccc",
+                backgroundColor: selected ? "#f5f5f5" : "white",
+                fontWeight: 900,
+                cursor: disabled ? "not-allowed" : "pointer",
+                opacity: disabled ? 0.45 : 1,
+              }}
+            >
+              {selected ? "✓ " : ""}
+              {player.player_name}
+              {player.is_host ? " 👑" : ""}
+              {player.is_leader ? " ⭐" : ""}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TeamMembers({
   title,
   players,
   readyPlayerIds,
+  activePlayerIds,
+  matchStatus,
   myPlayerId,
   borderColor,
   backgroundColor,
@@ -2023,6 +2383,8 @@ function TeamMembers({
   title: string;
   players: Player[];
   readyPlayerIds: Set<string>;
+  activePlayerIds: Set<string>;
+  matchStatus: MatchStatus;
   myPlayerId: string | null;
   borderColor: string;
   backgroundColor: string;
@@ -2086,12 +2448,44 @@ function TeamMembers({
                 : ""}
             </span>
 
-            <span className="team-member-status">
-              {readyPlayerIds.has(
-                player.id
-              )
-                ? "✓ 選択済み"
-                : "未選択"}
+            <span
+              className="team-member-status"
+              style={{
+                padding: "5px 9px",
+                borderRadius: 999,
+                backgroundColor:
+                  matchStatus === "selecting_players"
+                    ? "#f1f1f1"
+                    : !activePlayerIds.has(player.id)
+                      ? "#eeeeee"
+                      : readyPlayerIds.has(player.id)
+                        ? "#e6f4ea"
+                        : "#fff3e0",
+                color:
+                  matchStatus === "selecting_players"
+                    ? "#666"
+                    : !activePlayerIds.has(player.id)
+                      ? "#777"
+                      : readyPlayerIds.has(player.id)
+                        ? "#137333"
+                        : "#b06000",
+                border:
+                  matchStatus === "selecting_players"
+                    ? "1px solid #ddd"
+                    : !activePlayerIds.has(player.id)
+                      ? "1px solid #d5d5d5"
+                      : readyPlayerIds.has(player.id)
+                        ? "1px solid #a8dab5"
+                        : "1px solid #ffcc80",
+              }}
+            >
+              {matchStatus === "selecting_players"
+                ? "対戦者選択中"
+                : !activePlayerIds.has(player.id)
+                  ? "待機"
+                  : readyPlayerIds.has(player.id)
+                    ? "✓ 選択済み"
+                    : "⚠ 未選択"}
             </span>
           </div>
         )
@@ -2355,6 +2749,91 @@ function CharacterBoard({
           }
         )}
       </div>
+    </section>
+  );
+}
+
+function MyCharacterCard({
+  pick,
+  inMatch,
+}: {
+  pick: CharacterPick;
+  inMatch: boolean;
+}) {
+  const character = getCharacter(pick.character_id);
+  const accentColor = pick.team === "red" ? "#d32f2f" : "#1565c0";
+  const backgroundColor = pick.team === "red" ? "#fff5f5" : "#f3f7ff";
+
+  return (
+    <section
+      style={{
+        marginTop: 24,
+        padding: 18,
+        borderRadius: 18,
+        border: `3px solid ${accentColor}`,
+        backgroundColor,
+        textAlign: "center",
+        boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 1000,
+          color: accentColor,
+        }}
+      >
+        {inMatch ? "🎮 今回あなたが使用するキャラ" : "🔒 あなたの確定キャラ"}
+      </div>
+
+      <div
+        style={{
+          width: 150,
+          margin: "12px auto 0",
+          aspectRatio: "1 / 1",
+          display: "grid",
+          placeItems: "center",
+          borderRadius: 16,
+          backgroundColor: "white",
+          border: `2px solid ${accentColor}`,
+        }}
+      >
+        {character ? (
+          <img
+            src={character.image}
+            alt={character.name}
+            style={{
+              width: "92%",
+              height: "92%",
+              objectFit: "contain",
+            }}
+          />
+        ) : (
+          "?"
+        )}
+      </div>
+
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 22,
+          fontWeight: 1000,
+        }}
+      >
+        {character?.name ?? pick.character_id}
+      </div>
+
+      {!inMatch && (
+        <div
+          style={{
+            marginTop: 6,
+            color: "#666",
+            fontWeight: 800,
+          }}
+        >
+          他の対戦者の選択完了を待っています
+        </div>
+      )}
     </section>
   );
 }
