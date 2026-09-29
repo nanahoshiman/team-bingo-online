@@ -720,8 +720,16 @@ export default function GamePage() {
     }
   }
 
+  function canEditTeamSelection(team: Team) {
+    return (
+      matchStatus === "selecting_players" &&
+      amLeader &&
+      myPlayer?.team === team
+    );
+  }
+
   function toggleDraftPlayer(team: Team, playerId: string) {
-    if (!amHost || matchStatus !== "selecting_players") return;
+    if (!canEditTeamSelection(team)) return;
 
     const teamPlayers = team === "red" ? redPlayers : bluePlayers;
     if (!teamPlayers.some((player) => player.id === playerId)) return;
@@ -738,27 +746,31 @@ export default function GamePage() {
     setter([...current, playerId]);
   }
 
-  async function confirmActivePlayers() {
+  async function confirmActivePlayers(team: Team) {
     if (
-      !amHost ||
+      !canEditTeamSelection(team) ||
       savingActivePlayers ||
-      matchStatus !== "selecting_players" ||
-      draftRedPlayerIds.length !== 2 ||
-      draftBluePlayerIds.length !== 2
+      matchStatus !== "selecting_players"
     ) {
       return;
     }
 
+    const selectedIds =
+      team === "red" ? draftRedPlayerIds : draftBluePlayerIds;
+
+    if (selectedIds.length !== 2) return;
+
     setSavingActivePlayers(true);
 
     try {
+      const updatePayload =
+        team === "red"
+          ? { active_red_player_ids: selectedIds }
+          : { active_blue_player_ids: selectedIds };
+
       const { error } = await supabase
         .from("rooms")
-        .update({
-          active_red_player_ids: draftRedPlayerIds,
-          active_blue_player_ids: draftBluePlayerIds,
-          match_status: "picking",
-        })
+        .update(updatePayload)
         .eq("room_code", roomCode)
         .eq("match_status", "selecting_players");
 
@@ -768,10 +780,48 @@ export default function GamePage() {
         return;
       }
 
-      setActiveRedPlayerIds(draftRedPlayerIds);
-      setActiveBluePlayerIds(draftBluePlayerIds);
-      setMatchStatus("picking");
-      setSelectedCharacterId(null);
+      if (team === "red") {
+        setActiveRedPlayerIds(selectedIds);
+      } else {
+        setActiveBluePlayerIds(selectedIds);
+      }
+
+      // 相手チームの確定と同時になっても取りこぼさないよう、
+      // DBの最新状態を読み直してから4人が揃ったか判定する。
+      const { data: latestRoom, error: latestRoomError } = await supabase
+        .from("rooms")
+        .select("active_red_player_ids, active_blue_player_ids, match_status")
+        .eq("room_code", roomCode)
+        .maybeSingle();
+
+      if (latestRoomError) {
+        console.error("対戦者確定状態取得エラー:", latestRoomError);
+        await loadRoom();
+        return;
+      }
+
+      const latestRedIds = stringArray(latestRoom?.active_red_player_ids);
+      const latestBlueIds = stringArray(latestRoom?.active_blue_player_ids);
+
+      if (
+        latestRoom?.match_status === "selecting_players" &&
+        latestRedIds.length === 2 &&
+        latestBlueIds.length === 2
+      ) {
+        const { error: startPickError } = await supabase
+          .from("rooms")
+          .update({ match_status: "picking" })
+          .eq("room_code", roomCode)
+          .eq("match_status", "selecting_players");
+
+        if (startPickError) {
+          console.error("キャラ選択開始エラー:", startPickError);
+        } else {
+          setMatchStatus("picking");
+          setSelectedCharacterId(null);
+        }
+      }
+
       await loadRoom();
     } finally {
       setSavingActivePlayers(false);
@@ -786,7 +836,6 @@ export default function GamePage() {
       !boardData ||
       !amActivePlayer ||
       myPick ||
-      allPlayersReady ||
       matchStatus !== "picking"
     ) {
       return;
@@ -915,46 +964,6 @@ export default function GamePage() {
         null
       );
 
-      const {
-        count: readyCount,
-        error: readyCountError,
-      } = await supabase
-        .from("character_picks")
-        .select("id", {
-          count: "exact",
-          head: true,
-        })
-        .eq("room_code", roomCode)
-        .eq("is_ready", true);
-
-      if (readyCountError) {
-        console.error(
-          "選択完了人数確認エラー:",
-          readyCountError
-        );
-      }
-
-      if (
-        !readyCountError &&
-        (readyCount ?? 0) >= activePlayers.length
-      ) {
-        const { error: startError } =
-          await supabase
-            .from("rooms")
-            .update({
-              match_status: "in_match",
-            })
-            .eq("room_code", roomCode)
-            .eq("match_status", "picking");
-
-        if (startError) {
-          console.error(
-            "試合開始状態更新エラー:",
-            startError
-          );
-        }
-      }
-
       await Promise.all([
         loadCharacterPicks(),
         loadRoom(),
@@ -962,6 +971,99 @@ export default function GamePage() {
     } finally {
       setSavingPick(false);
     }
+  }
+
+  async function resetMyCharacterPick() {
+    if (
+      !myPlayer ||
+      !myPick ||
+      !amActivePlayer ||
+      savingPick ||
+      matchStatus !== "picking"
+    ) {
+      return;
+    }
+
+    const character = getCharacter(myPick.character_id);
+
+    if (
+      !window.confirm(
+        `${character?.name ?? myPick.character_id}の確定を解除して、キャラを選び直しますか？`
+      )
+    ) {
+      return;
+    }
+
+    setSavingPick(true);
+
+    try {
+      const { error } = await supabase
+        .from("character_picks")
+        .delete()
+        .eq("room_code", roomCode)
+        .eq("player_id", myPlayer.id);
+
+      if (error) {
+        console.error("キャラ選択解除エラー:", error);
+        alert(`キャラ選択の解除に失敗しました。\n${error.message ?? ""}`);
+        return;
+      }
+
+      setSelectedCharacterId(myPick.character_id);
+      await loadCharacterPicks();
+    } finally {
+      setSavingPick(false);
+    }
+  }
+
+  async function startMatch() {
+    if (
+      !amHost ||
+      !allPlayersReady ||
+      matchStatus !== "picking"
+    ) {
+      return;
+    }
+
+    const { data: latestPicks, error: picksError } = await supabase
+      .from("character_picks")
+      .select("player_id")
+      .eq("room_code", roomCode)
+      .eq("is_ready", true);
+
+    if (picksError) {
+      console.error("試合開始前READY確認エラー:", picksError);
+      alert("READY状態の確認に失敗しました。もう一度お試しください。");
+      return;
+    }
+
+    const latestReadyIds = new Set(
+      (latestPicks ?? [])
+        .map((pick) => pick.player_id)
+        .filter((playerId) => activePlayerIds.has(playerId))
+    );
+
+    if (activePlayerIds.size !== 4 || latestReadyIds.size !== 4) {
+      alert("対戦者4人全員のキャラ確定を待ってください。");
+      await loadCharacterPicks();
+      return;
+    }
+
+    const { error } = await supabase
+      .from("rooms")
+      .update({ match_status: "in_match" })
+      .eq("room_code", roomCode)
+      .eq("match_status", "picking");
+
+    if (error) {
+      console.error("試合開始エラー:", error);
+      alert(`試合開始に失敗しました。\n${error.message ?? ""}`);
+      return;
+    }
+
+    setMatchStatus("in_match");
+    setSelectedCharacterId(null);
+    await Promise.all([loadRoom(), loadCharacterPicks()]);
   }
 
   async function registerMatchResult() {
@@ -1658,71 +1760,113 @@ export default function GamePage() {
                   ⚔️ この試合の対戦者を選択
                 </h2>
 
-                {amHost ? (
-                  <>
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                        gap: 14,
-                      }}
-                    >
-                      <PlayerSelector
-                        title="🔴 赤チームから2人"
-                        players={redPlayers}
-                        selectedIds={draftRedPlayerIds}
-                        onToggle={(playerId) => toggleDraftPlayer("red", playerId)}
-                        accentColor="#d32f2f"
-                      />
-                      <PlayerSelector
-                        title="🔵 青チームから2人"
-                        players={bluePlayers}
-                        selectedIds={draftBluePlayerIds}
-                        onToggle={(playerId) => toggleDraftPlayer("blue", playerId)}
-                        accentColor="#1565c0"
-                      />
-                    </div>
+                <div
+                  style={{
+                    marginBottom: 16,
+                    textAlign: "center",
+                    color: "#555",
+                    fontWeight: 800,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  各チームのリーダーが、自分のチームから対戦者2人を決めます。
+                  <br />
+                  両チームが決定すると自動でキャラ選択へ進みます。
+                </div>
 
-                    <button
-                      type="button"
-                      onClick={confirmActivePlayers}
-                      disabled={
-                        savingActivePlayers ||
-                        draftRedPlayerIds.length !== 2 ||
-                        draftBluePlayerIds.length !== 2
-                      }
-                      style={{
-                        width: "100%",
-                        marginTop: 16,
-                        padding: 15,
-                        border: "none",
-                        borderRadius: 12,
-                        backgroundColor: "#6a1b9a",
-                        color: "white",
-                        fontSize: 17,
-                        fontWeight: 900,
-                        cursor:
-                          !savingActivePlayers &&
-                          draftRedPlayerIds.length === 2 &&
-                          draftBluePlayerIds.length === 2
-                            ? "pointer"
-                            : "not-allowed",
-                        opacity:
-                          !savingActivePlayers &&
-                          draftRedPlayerIds.length === 2 &&
-                          draftBluePlayerIds.length === 2
-                            ? 1
-                            : 0.45,
-                      }}
-                    >
-                      {savingActivePlayers
-                        ? "保存中..."
-                        : "✓ この4人でキャラ選択へ"}
-                    </button>
-                  </>
-                ) : (
-                  <StatusBox text="ホストがこの試合の対戦者を選択しています..." />
-                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                    gap: 14,
+                  }}
+                >
+                  <div>
+                    <PlayerSelector
+                      title="🔴 赤チームから2人"
+                      players={redPlayers}
+                      selectedIds={draftRedPlayerIds}
+                      onToggle={(playerId) => toggleDraftPlayer("red", playerId)}
+                      accentColor="#d32f2f"
+                      canEdit={canEditTeamSelection("red")}
+                    />
+
+                    {activeRedPlayerIds.length === 2 ? (
+                      <StatusBox text="✓ 赤チーム 対戦者決定済み" />
+                    ) : canEditTeamSelection("red") ? (
+                      <button
+                        type="button"
+                        onClick={() => confirmActivePlayers("red")}
+                        disabled={savingActivePlayers || draftRedPlayerIds.length !== 2}
+                        style={{
+                          width: "100%",
+                          marginTop: 10,
+                          padding: 13,
+                          border: "none",
+                          borderRadius: 12,
+                          backgroundColor: "#d32f2f",
+                          color: "white",
+                          fontWeight: 900,
+                          cursor:
+                            !savingActivePlayers && draftRedPlayerIds.length === 2
+                              ? "pointer"
+                              : "not-allowed",
+                          opacity:
+                            !savingActivePlayers && draftRedPlayerIds.length === 2
+                              ? 1
+                              : 0.45,
+                        }}
+                      >
+                        {savingActivePlayers ? "保存中..." : "✓ 赤チームの2人を決定"}
+                      </button>
+                    ) : (
+                      <StatusBox text="赤チームリーダーの決定待ち" />
+                    )}
+                  </div>
+
+                  <div>
+                    <PlayerSelector
+                      title="🔵 青チームから2人"
+                      players={bluePlayers}
+                      selectedIds={draftBluePlayerIds}
+                      onToggle={(playerId) => toggleDraftPlayer("blue", playerId)}
+                      accentColor="#1565c0"
+                      canEdit={canEditTeamSelection("blue")}
+                    />
+
+                    {activeBluePlayerIds.length === 2 ? (
+                      <StatusBox text="✓ 青チーム 対戦者決定済み" />
+                    ) : canEditTeamSelection("blue") ? (
+                      <button
+                        type="button"
+                        onClick={() => confirmActivePlayers("blue")}
+                        disabled={savingActivePlayers || draftBluePlayerIds.length !== 2}
+                        style={{
+                          width: "100%",
+                          marginTop: 10,
+                          padding: 13,
+                          border: "none",
+                          borderRadius: 12,
+                          backgroundColor: "#1565c0",
+                          color: "white",
+                          fontWeight: 900,
+                          cursor:
+                            !savingActivePlayers && draftBluePlayerIds.length === 2
+                              ? "pointer"
+                              : "not-allowed",
+                          opacity:
+                            !savingActivePlayers && draftBluePlayerIds.length === 2
+                              ? 1
+                              : 0.45,
+                        }}
+                      >
+                        {savingActivePlayers ? "保存中..." : "✓ 青チームの2人を決定"}
+                      </button>
+                    ) : (
+                      <StatusBox text="青チームリーダーの決定待ち" />
+                    )}
+                  </div>
+                </div>
               </section>
             )}
 
@@ -1848,28 +1992,20 @@ export default function GamePage() {
               allPlayersReady &&
               matchStatus ===
                 "in_match" && (
-                <div
-                  style={{
-                    marginTop:
-                      26,
-                    padding:
-                      "24px 16px",
-                    borderRadius:
-                      18,
-                    textAlign:
-                      "center",
-                    background:
-                      "linear-gradient(135deg, #fff1d6 0%, #ffe6e6 50%, #eee7ff 100%)",
-                    border:
-                      "3px solid #ff7a00",
-                    fontSize:
-                      "clamp(30px, 7vw, 54px)",
-                    fontWeight:
-                      1000,
-                  }}
-                >
-                  🔥 試合開始！！ 🔥
-                </div>
+                <MatchupDisplay
+                  redPicks={characterPicks.filter(
+                    (pick) =>
+                      pick.is_ready &&
+                      pick.team === "red" &&
+                      activePlayerIds.has(pick.player_id)
+                  )}
+                  bluePicks={characterPicks.filter(
+                    (pick) =>
+                      pick.is_ready &&
+                      pick.team === "blue" &&
+                      activePlayerIds.has(pick.player_id)
+                  )}
+                />
               )}
 
             {!gameFinished &&
@@ -1911,7 +2047,12 @@ export default function GamePage() {
               amActivePlayer &&
               myPick &&
               (matchStatus === "picking" || matchStatus === "in_match") && (
-                <MyCharacterCard pick={myPick} inMatch={matchStatus === "in_match"} />
+                <MyCharacterCard
+                  pick={myPick}
+                  inMatch={matchStatus === "in_match"}
+                  onReselect={resetMyCharacterPick}
+                  changing={savingPick}
+                />
               )}
 
             <section
@@ -1961,7 +2102,6 @@ export default function GamePage() {
                     !gameFinished &&
                     amActivePlayer &&
                     !myPick &&
-                    !allPlayersReady &&
                     matchStatus ===
                       "picking"
                   }
@@ -2010,7 +2150,6 @@ export default function GamePage() {
                     !gameFinished &&
                     amActivePlayer &&
                     !myPick &&
-                    !allPlayersReady &&
                     matchStatus ===
                       "picking"
                   }
@@ -2029,7 +2168,6 @@ export default function GamePage() {
             </section>
 
             {!gameFinished &&
-              !allPlayersReady &&
               matchStatus ===
                 "picking" && (
                 <section
@@ -2060,85 +2198,241 @@ export default function GamePage() {
                     <StatusBox text="✓ キャラ選択完了。使用キャラは上の『今回あなたが使用するキャラ』に表示されています" />
                   ) : selectedCharacterId ? (
                     <>
-                      <div
-                        style={{
-                          width:
-                            150,
-                          margin:
-                            "0 auto",
-                          aspectRatio:
-                            "1 / 1",
-                          display:
-                            "grid",
-                          placeItems:
-                            "center",
-                        }}
-                      >
-                        {(() => {
-                          const character =
-                            getCharacter(
-                              selectedCharacterId
-                            );
+                      {(() => {
+                        const character =
+                          getCharacter(
+                            selectedCharacterId
+                          );
 
-                          if (
-                            !character
-                          ) {
-                            return "?";
-                          }
+                        return (
+                          <>
+                            <div
+                              style={{
+                                textAlign:
+                                  "center",
+                                fontSize:
+                                  15,
+                                fontWeight:
+                                  900,
+                                color:
+                                  "#6a1b9a",
+                                marginBottom:
+                                  10,
+                              }}
+                            >
+                              現在選択中
+                            </div>
 
-                          return (
-                            <img
-                              src={
-                                character.image
+                            <div
+                              style={{
+                                width:
+                                  150,
+                                margin:
+                                  "0 auto",
+                                aspectRatio:
+                                  "1 / 1",
+                                display:
+                                  "grid",
+                                placeItems:
+                                  "center",
+                              }}
+                            >
+                              {character ? (
+                                <img
+                                  src={
+                                    character.image
+                                  }
+                                  alt={
+                                    character.name
+                                  }
+                                  style={{
+                                    width:
+                                      "92%",
+                                    height:
+                                      "92%",
+                                    objectFit:
+                                      "contain",
+                                  }}
+                                />
+                              ) : (
+                                "?"
+                              )}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  8,
+                                textAlign:
+                                  "center",
+                                fontSize:
+                                  20,
+                                fontWeight:
+                                  1000,
+                              }}
+                            >
+                              {character?.name ??
+                                selectedCharacterId}
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  10,
+                                padding:
+                                  "10px 12px",
+                                borderRadius:
+                                  10,
+                                backgroundColor:
+                                  "#f3e5f5",
+                                color:
+                                  "#5e356b",
+                                textAlign:
+                                  "center",
+                                fontSize:
+                                  14,
+                                fontWeight:
+                                  800,
+                                lineHeight:
+                                  1.6,
+                              }}
+                            >
+                              確定前なら、ビンゴカードの別のキャラを押して何度でも選び直せます
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={
+                                confirmCharacterPick
                               }
-                              alt={
-                                character.name
+                              disabled={
+                                savingPick
                               }
                               style={{
                                 width:
-                                  "92%",
-                                height:
-                                  "92%",
-                                objectFit:
-                                  "contain",
+                                  "100%",
+                                marginTop:
+                                  16,
+                                padding:
+                                  15,
+                                border:
+                                  "none",
+                                borderRadius:
+                                  12,
+                                backgroundColor:
+                                  "#188038",
+                                color:
+                                  "white",
+                                fontWeight:
+                                  900,
+                                fontSize:
+                                  16,
+                                cursor:
+                                  savingPick
+                                    ? "not-allowed"
+                                    : "pointer",
+                                opacity:
+                                  savingPick
+                                    ? 0.55
+                                    : 1,
                               }}
-                            />
-                          );
-                        })()}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={
-                          confirmCharacterPick
-                        }
-                        disabled={
-                          savingPick
-                        }
-                        style={{
-                          width:
-                            "100%",
-                          marginTop:
-                            16,
-                          padding:
-                            15,
-                          border:
-                            "none",
-                          borderRadius:
-                            12,
-                          backgroundColor:
-                            "#188038",
-                          color:
-                            "white",
-                          fontWeight:
-                            900,
-                        }}
-                      >
-                        ✓ このキャラで決定！
-                      </button>
+                            >
+                              {savingPick
+                                ? "確定中..."
+                                : "✓ このキャラで確定"}
+                            </button>
+                          </>
+                        );
+                      })()}
                     </>
                   ) : (
                     <StatusBox text="自分のチームのカードからキャラを選択してください" />
+                  )}
+                </section>
+              )}
+
+            {!gameFinished &&
+              allPlayersReady &&
+              matchStatus === "picking" && (
+                <section
+                  style={{
+                    marginTop: 24,
+                    padding: "22px 18px",
+                    borderRadius: 18,
+                    background:
+                      "linear-gradient(135deg, #111 0%, #2b2b2b 55%, #4a0d0d 100%)",
+                    border: "3px solid #d32f2f",
+                    boxShadow: "0 10px 26px rgba(0,0,0,0.24)",
+                    textAlign: "center",
+                    color: "white",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 18,
+                      fontWeight: 900,
+                      marginBottom: 12,
+                    }}
+                  >
+                    ✓ 対戦者4人のキャラが確定しました
+                  </div>
+
+                  {amHost ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={startMatch}
+                        style={{
+                          width: "100%",
+                          padding: "18px 14px",
+                          border: "3px solid white",
+                          borderRadius: 12,
+                          background:
+                            "linear-gradient(180deg, #e53935 0%, #9b1111 100%)",
+                          color: "white",
+                          fontSize: "clamp(26px, 6vw, 46px)",
+                          lineHeight: 1,
+                          letterSpacing: 2,
+                          fontWeight: 1000,
+                          fontStyle: "italic",
+                          cursor: "pointer",
+                          textShadow: "0 3px 0 rgba(0,0,0,0.45)",
+                          boxShadow: "0 8px 0 #5b0808, 0 12px 24px rgba(0,0,0,0.35)",
+                        }}
+                      >
+                        READY TO FIGHT!
+                      </button>
+                      <div
+                        style={{
+                          marginTop: 14,
+                          fontSize: 14,
+                          fontWeight: 800,
+                          color: "#eee",
+                        }}
+                      >
+                        押すまでは各プレイヤーが確定キャラを変更できます
+                      </div>
+                    </>
+                  ) : (
+                    <div
+                      style={{
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: "rgba(255,255,255,0.10)",
+                        fontWeight: 900,
+                      }}
+                    >
+                      ホストの「READY TO FIGHT!」を待っています
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 13,
+                          color: "#ddd",
+                        }}
+                      >
+                        試合開始までは自分の確定キャラを変更できます
+                      </div>
+                    </div>
                   )}
                 </section>
               )}
@@ -2307,12 +2601,14 @@ function PlayerSelector({
   selectedIds,
   onToggle,
   accentColor,
+  canEdit,
 }: {
   title: string;
   players: Player[];
   selectedIds: string[];
   onToggle: (playerId: string) => void;
   accentColor: string;
+  canEdit: boolean;
 }) {
   return (
     <div
@@ -2337,7 +2633,7 @@ function PlayerSelector({
       <div style={{ display: "grid", gap: 8 }}>
         {players.map((player) => {
           const selected = selectedIds.includes(player.id);
-          const disabled = !selected && selectedIds.length >= 2;
+          const disabled = !canEdit || (!selected && selectedIds.length >= 2);
 
           return (
             <button
@@ -2753,12 +3049,175 @@ function CharacterBoard({
   );
 }
 
+function MatchupDisplay({
+  redPicks,
+  bluePicks,
+}: {
+  redPicks: CharacterPick[];
+  bluePicks: CharacterPick[];
+}) {
+  function PickIcons({
+    picks,
+    accentColor,
+  }: {
+    picks: CharacterPick[];
+    accentColor: string;
+  }) {
+    return (
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 10,
+          minWidth: 0,
+        }}
+      >
+        {picks.slice(0, 2).map((pick, index) => {
+          const character = getCharacter(pick.character_id);
+
+          return (
+            <div
+              key={pick.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              {index > 0 && (
+                <span
+                  style={{
+                    fontSize: "clamp(20px, 4vw, 32px)",
+                    fontWeight: 1000,
+                    color: "#333",
+                  }}
+                >
+                  ＆
+                </span>
+              )}
+
+              <div
+                title={character?.name ?? pick.character_id}
+                style={{
+                  width: "clamp(66px, 12vw, 110px)",
+                  aspectRatio: "1 / 1",
+                  display: "grid",
+                  placeItems: "center",
+                  borderRadius: 16,
+                  backgroundColor: "white",
+                  border: `4px solid ${accentColor}`,
+                  overflow: "hidden",
+                  boxShadow: "0 6px 14px rgba(0,0,0,0.16)",
+                }}
+              >
+                {character ? (
+                  <img
+                    src={character.image}
+                    alt={character.name}
+                    style={{
+                      width: "92%",
+                      height: "92%",
+                      objectFit: "contain",
+                    }}
+                  />
+                ) : (
+                  <span style={{ fontWeight: 1000 }}>?</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <section
+      style={{
+        marginTop: 26,
+        padding: "22px 14px 26px",
+        borderRadius: 18,
+        textAlign: "center",
+        background:
+          "linear-gradient(135deg, #fff1d6 0%, #ffe6e6 50%, #eee7ff 100%)",
+        border: "3px solid #ff7a00",
+        boxShadow: "0 10px 24px rgba(0,0,0,0.10)",
+      }}
+    >
+      <div
+        style={{
+          fontSize: "clamp(30px, 7vw, 54px)",
+          fontWeight: 1000,
+          lineHeight: 1.1,
+        }}
+      >
+        🔥 試合開始！！ 🔥
+      </div>
+
+      <div
+        style={{
+          marginTop: 20,
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
+          alignItems: "center",
+          gap: "clamp(8px, 2vw, 20px)",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              marginBottom: 10,
+              color: "#c62828",
+              fontWeight: 1000,
+              fontSize: "clamp(14px, 3vw, 20px)",
+            }}
+          >
+            🔴 RED
+          </div>
+          <PickIcons picks={redPicks} accentColor="#d32f2f" />
+        </div>
+
+        <div
+          style={{
+            fontSize: "clamp(28px, 6vw, 52px)",
+            fontWeight: 1000,
+            fontStyle: "italic",
+            color: "#222",
+            textShadow: "0 2px 0 rgba(255,255,255,0.8)",
+          }}
+        >
+          VS
+        </div>
+
+        <div>
+          <div
+            style={{
+              marginBottom: 10,
+              color: "#1565c0",
+              fontWeight: 1000,
+              fontSize: "clamp(14px, 3vw, 20px)",
+            }}
+          >
+            BLUE 🔵
+          </div>
+          <PickIcons picks={bluePicks} accentColor="#1565c0" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MyCharacterCard({
   pick,
   inMatch,
+  onReselect,
+  changing,
 }: {
   pick: CharacterPick;
   inMatch: boolean;
+  onReselect: () => void;
+  changing: boolean;
 }) {
   const character = getCharacter(pick.character_id);
   const accentColor = pick.team === "red" ? "#d32f2f" : "#1565c0";
@@ -2824,15 +3283,36 @@ function MyCharacterCard({
       </div>
 
       {!inMatch && (
-        <div
-          style={{
-            marginTop: 6,
-            color: "#666",
-            fontWeight: 800,
-          }}
-        >
-          他の対戦者の選択完了を待っています
-        </div>
+        <>
+          <div
+            style={{
+              marginTop: 6,
+              color: "#666",
+              fontWeight: 800,
+            }}
+          >
+            READY TO FIGHT! が押されるまでは変更できます
+          </div>
+
+          <button
+            type="button"
+            onClick={onReselect}
+            disabled={changing}
+            style={{
+              marginTop: 12,
+              padding: "11px 18px",
+              borderRadius: 10,
+              border: `2px solid ${accentColor}`,
+              backgroundColor: "white",
+              color: accentColor,
+              fontWeight: 900,
+              cursor: changing ? "not-allowed" : "pointer",
+              opacity: changing ? 0.55 : 1,
+            }}
+          >
+            {changing ? "変更準備中..." : "↩ キャラを選び直す"}
+          </button>
+        </>
       )}
     </section>
   );
