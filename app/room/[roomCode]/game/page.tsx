@@ -330,6 +330,15 @@ export default function GamePage() {
     setCharacterPicks((data ?? []) as CharacterPick[]);
   }
 
+  async function resyncGameState() {
+    await Promise.all([
+      loadPlayers(),
+      loadRoom(),
+      loadMatchResults(),
+      loadCharacterPicks(),
+    ]);
+  }
+
   useEffect(() => {
     if (!roomCode) return;
 
@@ -423,6 +432,27 @@ export default function GamePage() {
       supabase.removeChannel(roomChannel);
       supabase.removeChannel(resultChannel);
       supabase.removeChannel(picksChannel);
+    };
+  }, [roomCode]);
+
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const syncWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void resyncGameState();
+    };
+
+    const syncWhenFocused = () => {
+      void resyncGameState();
+    };
+
+    window.addEventListener("focus", syncWhenFocused);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+
+    return () => {
+      window.removeEventListener("focus", syncWhenFocused);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
     };
   }, [roomCode]);
 
