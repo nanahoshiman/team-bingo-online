@@ -190,12 +190,11 @@ export default function StreamPage() {
   return (
     <main
       style={{
-        minHeight: "100vh",
-        padding: 20,
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
         boxSizing: "border-box",
-        background: transparent
-          ? "transparent"
-          : "radial-gradient(circle at top, #25252d 0%, #0d0d12 65%, #050507 100%)",
+        background: "transparent",
         color: "white",
         fontFamily: "Arial, Helvetica, sans-serif",
       }}
@@ -203,54 +202,29 @@ export default function StreamPage() {
       <div
         style={{
           width: "100%",
-          maxWidth: 1920,
-          minHeight: "calc(100vh - 40px)",
-          margin: "0 auto",
+          height: "100%",
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.7fr) minmax(420px, 0.8fr)",
-          gridTemplateRows: showMembers ? "1fr auto" : "1fr",
-          gap: 18,
+          gridTemplateColumns: "minmax(0, 1fr) 31%",
+          gridTemplateRows: "minmax(0, 1fr) 25%",
+          gap: 12,
+          padding: 12,
+          boxSizing: "border-box",
         }}
       >
-        <section
+        {/* 左上は意図的に空白。OBSで下のゲーム映像を見せる透明領域。 */}
+        <div style={{ gridColumn: "1", gridRow: "1", background: "transparent", pointerEvents: "none" }} />
+
+        {/* L字の縦側：ビンゴ盤面 */}
+        <aside
           style={{
-            gridRow: showMembers ? "1 / 2" : "1",
-            padding: 24,
-            borderRadius: 22,
-            border: "2px solid rgba(255,255,255,0.18)",
-            background: "rgba(10,10,14,0.92)",
-            boxShadow: "0 16px 44px rgba(0,0,0,0.38)",
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 560,
+            gridColumn: "2",
+            gridRow: "1",
+            display: "grid",
+            gridTemplateRows: "1fr 1fr",
+            gap: 12,
+            minHeight: 0,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16 }}>
-            <div>
-              <div style={{ fontSize: 18, opacity: 0.72, fontWeight: 800 }}>TEAM BINGO ONLINE</div>
-              <div style={{ fontSize: 32, fontWeight: 1000, letterSpacing: 1 }}>ROOM {roomCode}</div>
-            </div>
-            <StatusBadge status={matchStatus} />
-          </div>
-
-          <div style={{ flex: 1, display: "grid", placeItems: "center", padding: "30px 10px" }}>
-            <MatchArea
-              status={matchStatus}
-              redPicks={redPicks}
-              bluePicks={bluePicks}
-              activeRed={redPlayers.filter((p) => activeRedPlayerIds.includes(p.id))}
-              activeBlue={bluePlayers.filter((p) => activeBluePlayerIds.includes(p.id))}
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 16 }}>
-            <Score team="red" count={matchResults.filter((r) => r.winning_team === "red").length} />
-            <div style={{ fontSize: 20, fontWeight: 1000, opacity: 0.55 }}>MATCH WINS</div>
-            <Score team="blue" count={matchResults.filter((r) => r.winning_team === "blue").length} />
-          </div>
-        </section>
-
-        <aside style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 18, minHeight: 0 }}>
           <StreamBoard
             team="blue"
             ids={boardData?.blue ?? []}
@@ -265,21 +239,172 @@ export default function StreamPage() {
           />
         </aside>
 
-        {showMembers && (
-          <section
+        {/* L字の横側：対戦カード・スコア・メンバー */}
+        <section
+          style={{
+            gridColumn: "1 / -1",
+            gridRow: "2",
+            display: "grid",
+            gridTemplateColumns: showMembers ? "1.55fr 0.55fr 1fr" : "1.8fr 0.7fr",
+            gap: 12,
+            minHeight: 0,
+          }}
+        >
+          <div
             style={{
-              gridColumn: "1 / -1",
+              minWidth: 0,
+              padding: 12,
+              borderRadius: 14,
+              border: "2px solid rgba(255,255,255,0.2)",
+              background: "rgba(8,9,13,0.96)",
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 18,
+              alignItems: "center",
             }}
           >
-            <MemberBar team="red" players={redPlayers} activeIds={activeIds} />
-            <MemberBar team="blue" players={bluePlayers} activeIds={activeIds} />
-          </section>
-        )}
+            <OverlayMatchInfo
+              status={matchStatus}
+              redPicks={redPicks}
+              bluePicks={bluePicks}
+              activeRed={redPlayers.filter((p) => activeRedPlayerIds.includes(p.id))}
+              activeBlue={bluePlayers.filter((p) => activeBluePlayerIds.includes(p.id))}
+            />
+          </div>
+
+          <div
+            style={{
+              padding: 12,
+              borderRadius: 14,
+              border: "2px solid rgba(255,255,255,0.2)",
+              background: "rgba(8,9,13,0.96)",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              gap: 10,
+              minWidth: 0,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 11, opacity: 0.58, fontWeight: 900 }}>TEAM BINGO ONLINE</div>
+                <div style={{ fontSize: 18, fontWeight: 1000, whiteSpace: "nowrap" }}>ROOM {roomCode}</div>
+              </div>
+              <StatusBadge status={matchStatus} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
+              <Score team="red" count={matchResults.filter((r) => r.winning_team === "red").length} />
+              <div style={{ fontSize: 11, fontWeight: 1000, opacity: 0.55, textAlign: "center" }}>WINS</div>
+              <Score team="blue" count={matchResults.filter((r) => r.winning_team === "blue").length} />
+            </div>
+          </div>
+
+          {showMembers && (
+            <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 8, minHeight: 0 }}>
+              <MemberBar team="red" players={redPlayers} activeIds={activeIds} />
+              <MemberBar team="blue" players={bluePlayers} activeIds={activeIds} />
+            </div>
+          )}
+        </section>
       </div>
     </main>
+  );
+}
+
+
+function OverlayMatchInfo({
+  status,
+  redPicks,
+  bluePicks,
+  activeRed,
+  activeBlue,
+}: {
+  status: MatchStatus;
+  redPicks: CharacterPick[];
+  bluePicks: CharacterPick[];
+  activeRed: Player[];
+  activeBlue: Player[];
+}) {
+  const redNames = activeRed.length ? activeRed.map((p) => p.player_name).join(" ＆ ") : "選択待ち";
+  const blueNames = activeBlue.length ? activeBlue.map((p) => p.player_name).join(" ＆ ") : "選択待ち";
+
+  if (status !== "in_match") {
+    const title =
+      status === "selecting_players"
+        ? "NEXT PLAYERS"
+        : status === "picking"
+          ? "CHARACTER SELECT"
+          : "RESULT";
+
+    return (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 12, alignItems: "center" }}>
+        <div style={{ minWidth: 0, padding: "10px 12px", borderRadius: 12, border: "2px solid #ff5252", textAlign: "center" }}>
+          <div style={{ color: "#ff5252", fontSize: 14, fontWeight: 1000 }}>RED TEAM</div>
+          <div style={{ marginTop: 4, fontSize: 18, fontWeight: 1000, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{redNames}</div>
+        </div>
+        <div style={{ minWidth: 100, textAlign: "center" }}>
+          <div style={{ fontSize: 12, opacity: 0.62, fontWeight: 1000 }}>{title}</div>
+          <div style={{ fontSize: 28, fontWeight: 1000, fontStyle: "italic" }}>VS</div>
+        </div>
+        <div style={{ minWidth: 0, padding: "10px 12px", borderRadius: 12, border: "2px solid #448aff", textAlign: "center" }}>
+          <div style={{ color: "#448aff", fontSize: 14, fontWeight: 1000 }}>BLUE TEAM</div>
+          <div style={{ marginTop: 4, fontSize: 18, fontWeight: 1000, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{blueNames}</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 10, alignItems: "center" }}>
+      <OverlayPickSide team="red" picks={redPicks} />
+      <div style={{ fontSize: 34, fontWeight: 1000, fontStyle: "italic" }}>VS</div>
+      <OverlayPickSide team="blue" picks={bluePicks} />
+    </div>
+  );
+}
+
+function OverlayPickSide({ team, picks }: { team: Team; picks: CharacterPick[] }) {
+  const color = team === "red" ? "#ff5252" : "#448aff";
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, minWidth: 0 }}>
+      {[0, 1].map((index) => {
+        const pick = picks[index];
+        const character = pick ? getCharacter(pick.character_id) : null;
+
+        return (
+          <div
+            key={index}
+            style={{
+              minWidth: 0,
+              height: 62,
+              padding: "5px 8px",
+              borderRadius: 10,
+              border: `2px solid ${color}`,
+              background: "rgba(255,255,255,0.06)",
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              boxSizing: "border-box",
+            }}
+          >
+            <div style={{ width: 46, height: 46, flex: "0 0 46px", display: "grid", placeItems: "center" }}>
+              {character ? (
+                <img src={character.image} alt={character.name} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+              ) : (
+                <span style={{ fontSize: 26, opacity: 0.3 }}>?</span>
+              )}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 1000, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {character?.name ?? "WAIT"}
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.7, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {pick?.player_name ?? ""}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -349,7 +474,7 @@ function ActiveNames({ team, players }: { team: Team; players: Player[] }) {
   const color = team === "red" ? "#ff6b6b" : "#64a7ff";
   return (
     <div style={{ padding: 20, borderRadius: 18, border: `3px solid ${color}`, background: "rgba(255,255,255,0.06)" }}>
-      <div style={{ color, fontSize: 22, fontWeight: 1000 }}>{team === "red" ? "RED TEAM" : "BLUE TEAM"}</div>
+      <div style={{ color, fontSize: 14, fontWeight: 1000 }}>{team === "red" ? "RED TEAM" : "BLUE TEAM"}</div>
       <div style={{ marginTop: 12, fontSize: 28, fontWeight: 1000 }}>
         {players.length ? players.map((p) => p.player_name).join(" ＆ ") : "選択待ち"}
       </div>
@@ -387,9 +512,9 @@ function PickSide({ team, picks }: { team: Team; picks: CharacterPick[] }) {
 function Score({ team, count }: { team: Team; count: number }) {
   const color = team === "red" ? "#ff5252" : "#448aff";
   return (
-    <div style={{ padding: "14px 20px", borderRadius: 16, border: `2px solid ${color}`, background: "rgba(255,255,255,0.06)", textAlign: "center" }}>
+    <div style={{ padding: "8px 10px", borderRadius: 12, border: `2px solid ${color}`, background: "rgba(255,255,255,0.06)", textAlign: "center", whiteSpace: "nowrap" }}>
       <span style={{ color, fontSize: 22, fontWeight: 1000 }}>{team === "red" ? "RED" : "BLUE"}</span>
-      <span style={{ marginLeft: 14, fontSize: 34, fontWeight: 1000 }}>{count}</span>
+      <span style={{ marginLeft: 7, fontSize: 22, fontWeight: 1000 }}>{count}</span>
     </div>
   );
 }
@@ -409,8 +534,8 @@ function StreamBoard({
   const centerIndex = Math.floor((boardSize * boardSize) / 2);
 
   return (
-    <section style={{ padding: 14, borderRadius: 20, border: `4px solid ${color}`, background: "rgba(10,10,14,0.94)", minHeight: 0 }}>
-      <div style={{ color, textAlign: "center", fontSize: 24, fontWeight: 1000, marginBottom: 10 }}>
+    <section style={{ padding: 9, borderRadius: 14, border: `3px solid ${color}`, background: "rgba(8,9,13,0.96)", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ color, textAlign: "center", fontSize: 18, fontWeight: 1000, marginBottom: 6, flex: "0 0 auto" }}>
         {team === "red" ? "🔴 RED BINGO" : "🔵 BLUE BINGO"}
       </div>
 
