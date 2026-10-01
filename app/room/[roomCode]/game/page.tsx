@@ -1598,6 +1598,51 @@ export default function GamePage() {
           .character-board-grid {
             gap: 5px !important;
           }
+
+          .matchup-display {
+            padding: 16px 8px 18px !important;
+          }
+
+          .matchup-title {
+            font-size: clamp(26px, 8vw, 38px) !important;
+          }
+
+          .matchup-grid {
+            margin-top: 14px !important;
+            gap: 4px !important;
+          }
+
+          .matchup-team {
+            min-width: 0;
+          }
+
+          .matchup-team-label {
+            margin-bottom: 7px !important;
+            font-size: 14px !important;
+          }
+
+          .matchup-pick-icons {
+            gap: 4px !important;
+          }
+
+          .matchup-pick-pair {
+            gap: 4px !important;
+            min-width: 0;
+          }
+
+          .matchup-ampersand {
+            font-size: 18px !important;
+          }
+
+          .matchup-character-icon {
+            width: clamp(46px, 13vw, 58px) !important;
+            border-width: 3px !important;
+            border-radius: 12px !important;
+          }
+
+          .matchup-vs {
+            font-size: clamp(22px, 6vw, 30px) !important;
+          }
         }
       `}</style>
 
@@ -3108,6 +3153,7 @@ function MatchupDisplay({
   }) {
     return (
       <div
+        className="matchup-pick-icons"
         style={{
           display: "flex",
           alignItems: "center",
@@ -3122,6 +3168,7 @@ function MatchupDisplay({
           return (
             <div
               key={pick.id}
+              className="matchup-pick-pair"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -3130,6 +3177,7 @@ function MatchupDisplay({
             >
               {index > 0 && (
                 <span
+                  className="matchup-ampersand"
                   style={{
                     fontSize: "clamp(20px, 4vw, 32px)",
                     fontWeight: 1000,
@@ -3142,6 +3190,7 @@ function MatchupDisplay({
 
               <div
                 title={character?.name ?? pick.character_id}
+                className="matchup-character-icon"
                 style={{
                   width: "clamp(66px, 12vw, 110px)",
                   aspectRatio: "1 / 1",
@@ -3177,6 +3226,7 @@ function MatchupDisplay({
 
   return (
     <section
+      className="matchup-display"
       style={{
         marginTop: 26,
         padding: "22px 14px 26px",
@@ -3189,6 +3239,7 @@ function MatchupDisplay({
       }}
     >
       <div
+        className="matchup-title"
         style={{
           fontSize: "clamp(30px, 7vw, 54px)",
           fontWeight: 1000,
@@ -3199,6 +3250,7 @@ function MatchupDisplay({
       </div>
 
       <div
+        className="matchup-grid"
         style={{
           marginTop: 20,
           display: "grid",
@@ -3207,8 +3259,9 @@ function MatchupDisplay({
           gap: "clamp(8px, 2vw, 20px)",
         }}
       >
-        <div>
+        <div className="matchup-team">
           <div
+            className="matchup-team-label"
             style={{
               marginBottom: 10,
               color: "#c62828",
@@ -3222,6 +3275,7 @@ function MatchupDisplay({
         </div>
 
         <div
+          className="matchup-vs"
           style={{
             fontSize: "clamp(28px, 6vw, 52px)",
             fontWeight: 1000,
@@ -3233,8 +3287,9 @@ function MatchupDisplay({
           VS
         </div>
 
-        <div>
+        <div className="matchup-team">
           <div
+            className="matchup-team-label"
             style={{
               marginBottom: 10,
               color: "#1565c0",
