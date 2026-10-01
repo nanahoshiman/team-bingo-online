@@ -22,6 +22,39 @@ export default function RoomPage() {
   const [loading, setLoading] = useState(true);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  function getStoredPlayerId() {
+    const sessionRoomCode = sessionStorage.getItem("roomCode");
+    const sessionPlayerId = sessionStorage.getItem("playerId");
+    if (sessionPlayerId && (!sessionRoomCode || sessionRoomCode === roomCode)) {
+      return sessionPlayerId;
+    }
+
+    const savedRoomCode = localStorage.getItem("roomCode");
+    const savedPlayerId = localStorage.getItem("playerId");
+    if (savedPlayerId && savedRoomCode === roomCode) {
+      sessionStorage.setItem("playerId", savedPlayerId);
+      sessionStorage.setItem("roomCode", roomCode);
+      const savedGameMode = localStorage.getItem("gameMode");
+      if (savedGameMode) sessionStorage.setItem("gameMode", savedGameMode);
+      return savedPlayerId;
+    }
+
+    return null;
+  }
+
+  function clearStoredIdentity() {
+    sessionStorage.removeItem("playerId");
+    sessionStorage.removeItem("roomCode");
+    sessionStorage.removeItem("gameMode");
+
+    if (localStorage.getItem("roomCode") === roomCode) {
+      localStorage.removeItem("playerId");
+      localStorage.removeItem("roomCode");
+      localStorage.removeItem("gameMode");
+    }
+  }
 
   async function loadPlayers() {
     const { data, error } = await supabase
@@ -63,6 +96,52 @@ export default function RoomPage() {
     await Promise.all([loadPlayers(), checkRoomStatus()]);
   }
 
+  async function leaveRoom() {
+    if (!myPlayerId || isLeaving || isStarting) return;
+
+    const confirmed = window.confirm(
+      "ルームから退出しますか？\n退出すると参加枠が空き、同じプレイヤーとしての復帰はできなくなります。"
+    );
+    if (!confirmed) return;
+
+    setIsLeaving(true);
+
+    const leavingPlayer = players.find((player) => player.id === myPlayerId) ?? null;
+    const { error: deleteError } = await supabase
+      .from("player")
+      .delete()
+      .eq("id", myPlayerId)
+      .eq("room_code", roomCode);
+
+    if (deleteError) {
+      console.error("ルーム退出エラー:", deleteError);
+      alert("ルームから退出できませんでした。");
+      setIsLeaving(false);
+      return;
+    }
+
+    if (leavingPlayer?.is_host) {
+      const { data: remainingPlayers, error: remainingError } = await supabase
+        .from("player")
+        .select("id")
+        .eq("room_code", roomCode)
+        .order("created_at", { ascending: true })
+        .limit(1);
+
+      if (!remainingError && remainingPlayers && remainingPlayers.length > 0) {
+        const { error: hostError } = await supabase
+          .from("player")
+          .update({ is_host: true })
+          .eq("id", remainingPlayers[0].id);
+
+        if (hostError) console.error("ホスト引き継ぎエラー:", hostError);
+      }
+    }
+
+    clearStoredIdentity();
+    router.push("/");
+  }
+
   async function startTeamSetup() {
     if (isStarting) return;
 
@@ -86,7 +165,7 @@ export default function RoomPage() {
   useEffect(() => {
     if (!roomCode) return;
 
-    setMyPlayerId(sessionStorage.getItem("playerId"));
+    setMyPlayerId(getStoredPlayerId());
     void resyncRoomState();
 
     const playerChannel = supabase
@@ -353,6 +432,27 @@ export default function RoomPage() {
             ホストがゲームを開始するまでお待ちください
           </div>
         )}
+
+        <button
+          type="button"
+          disabled={!myPlayerId || isLeaving || isStarting}
+          onClick={leaveRoom}
+          style={{
+            width: "100%",
+            marginTop: 14,
+            padding: "12px 16px",
+            border: "1px solid #d32f2f",
+            borderRadius: 12,
+            backgroundColor: "white",
+            color: "#c62828",
+            fontSize: 15,
+            fontWeight: 900,
+            cursor: !myPlayerId || isLeaving || isStarting ? "not-allowed" : "pointer",
+            opacity: !myPlayerId || isLeaving || isStarting ? 0.5 : 1,
+          }}
+        >
+          {isLeaving ? "退出中..." : "🚪 ルームから退出"}
+        </button>
       </section>
     </main>
   );

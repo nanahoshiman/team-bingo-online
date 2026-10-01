@@ -243,6 +243,26 @@ export default function GamePage() {
 
   const [refreshingState, setRefreshingState] = useState(false);
 
+  function getStoredPlayerId() {
+    const sessionRoomCode = sessionStorage.getItem("roomCode");
+    const sessionPlayerId = sessionStorage.getItem("playerId");
+    if (sessionPlayerId && (!sessionRoomCode || sessionRoomCode === roomCode)) {
+      return sessionPlayerId;
+    }
+
+    const savedRoomCode = localStorage.getItem("roomCode");
+    const savedPlayerId = localStorage.getItem("playerId");
+    if (savedPlayerId && savedRoomCode === roomCode) {
+      sessionStorage.setItem("playerId", savedPlayerId);
+      sessionStorage.setItem("roomCode", roomCode);
+      const savedGameMode = localStorage.getItem("gameMode");
+      if (savedGameMode) sessionStorage.setItem("gameMode", savedGameMode);
+      return savedPlayerId;
+    }
+
+    return null;
+  }
+
   async function loadPlayers() {
     const { data, error } = await supabase
       .from("player")
@@ -356,7 +376,7 @@ export default function GamePage() {
   useEffect(() => {
     if (!roomCode) return;
 
-    setMyPlayerId(sessionStorage.getItem("playerId"));
+    setMyPlayerId(getStoredPlayerId());
 
     Promise.all([
       loadPlayers(),
