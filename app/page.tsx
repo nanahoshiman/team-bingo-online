@@ -420,6 +420,58 @@ export default function Home() {
 
       }
 
+      // 同じ端末にこのルームのプレイヤー情報が残っている場合は、
+      // 新規プレイヤーを作らず既存プレイヤーとして復帰する。
+      const storedPlayerId = localStorage.getItem("playerId");
+      const storedRoomCode = localStorage.getItem("roomCode");
+      const storedGameMode = localStorage.getItem("gameMode");
+
+      if (
+        storedPlayerId &&
+        storedRoomCode === normalizedRoomCode &&
+        storedGameMode === expectedMode
+      ) {
+        const { data: existingPlayer, error: existingPlayerError } =
+          await supabase
+            .from("player")
+            .select("id")
+            .eq("id", storedPlayerId)
+            .eq("room_code", normalizedRoomCode)
+            .maybeSingle();
+
+        if (!existingPlayerError && existingPlayer) {
+          savePlayerIdentity(
+            existingPlayer.id,
+            normalizedRoomCode,
+            expectedMode
+          );
+
+          if (gameMode === "team-bingo") {
+            if (room.status === "team_setup") {
+              router.push(`/room/${normalizedRoomCode}/teams`);
+            } else if (room.status === "teams_ready") {
+              router.push(`/room/${normalizedRoomCode}/game`);
+            } else {
+              router.push(`/room/${normalizedRoomCode}`);
+            }
+          } else {
+            router.push(
+              room.status === "waiting"
+                ? `/battle/${normalizedRoomCode}`
+                : `/battle/${normalizedRoomCode}/game`
+            );
+          }
+
+          return;
+        }
+
+        // localStorageだけ古い場合は破棄して通常の新規参加へ進む。
+        localStorage.removeItem("playerId");
+        localStorage.removeItem("roomCode");
+        localStorage.removeItem("gameMode");
+      }
+
+
 
 
       if (
