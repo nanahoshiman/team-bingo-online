@@ -456,6 +456,19 @@ export default function GamePage() {
     };
   }, [roomCode]);
 
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void resyncGameState();
+    }, 8000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [roomCode]);
+
   const redPlayers = useMemo(
     () =>
       players.filter(
