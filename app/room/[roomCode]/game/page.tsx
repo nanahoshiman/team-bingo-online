@@ -1204,6 +1204,7 @@ export default function GamePage() {
         characterPicks.filter(
           (pick) =>
             pick.is_ready &&
+            activePlayerIds.has(pick.player_id) &&
             pick.team ===
               selectedWinningTeam
         );
@@ -1321,6 +1322,7 @@ export default function GamePage() {
               .filter(
                 (pick) =>
                   pick.is_ready &&
+                  activePlayerIds.has(pick.player_id) &&
                   pick.team === "red"
               )
               .map(
@@ -1337,6 +1339,7 @@ export default function GamePage() {
               .filter(
                 (pick) =>
                   pick.is_ready &&
+                  activePlayerIds.has(pick.player_id) &&
                   pick.team === "blue"
               )
               .map(
