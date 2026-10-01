@@ -434,12 +434,16 @@ export default function Home() {
         const { data: existingPlayer, error: existingPlayerError } =
           await supabase
             .from("player")
-            .select("id")
+            .select("id, player_name")
             .eq("id", storedPlayerId)
             .eq("room_code", normalizedRoomCode)
             .maybeSingle();
 
-        if (!existingPlayerError && existingPlayer) {
+        if (
+          !existingPlayerError &&
+          existingPlayer &&
+          existingPlayer.player_name === normalizedPlayerName
+        ) {
           savePlayerIdentity(
             existingPlayer.id,
             normalizedRoomCode,
