@@ -528,12 +528,8 @@ function StreamBoard({
 
   return (
     <section style={{ padding: 9, borderRadius: 14, border: `3px solid ${color}`, background: "rgba(8,9,13,0.96)", minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <div style={{ color, textAlign: "center", fontSize: 18, fontWeight: 1000, marginBottom: 6, flex: "0 0 auto" }}>
-        {team === "red" ? "🔴 RED BINGO" : "🔵 BLUE BINGO"}
-      </div>
-
       {!ids.length ? (
-        <div style={{ height: "calc(100% - 40px)", display: "grid", placeItems: "center", opacity: 0.5, fontWeight: 900 }}>盤面生成待ち</div>
+        <div style={{ height: "100%", display: "grid", placeItems: "center", opacity: 0.5, fontWeight: 900 }}>盤面生成待ち</div>
       ) : (
         <div style={{ width: "min(100%, 46vh)", margin: "0 auto", display: "grid", gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`, gap: 5 }}>
           {ids.map((id, index) => {
