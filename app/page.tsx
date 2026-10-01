@@ -1447,6 +1447,26 @@ export default function Home() {
         )}
 
 
+        <button
+          type="button"
+          onClick={() => router.push("/stream")}
+          style={{
+            width: "100%",
+            marginTop: 18,
+            padding: "14px 18px",
+            border: "2px solid #6a1b9a",
+            borderRadius: 12,
+            backgroundColor: "white",
+            color: "#6a1b9a",
+            fontSize: 16,
+            fontWeight: 900,
+            cursor: "pointer",
+          }}
+        >
+          📺 配信者用ページを開く
+        </button>
+
+
 
         {gameMode ===
 

@@ -205,47 +205,37 @@ export default function StreamPage() {
           height: "100%",
           display: "grid",
           gridTemplateColumns: "minmax(0, 1fr) 31%",
-          gridTemplateRows: "minmax(0, 1fr) 25%",
+          gridTemplateRows: "minmax(0, 1fr) 24%",
           gap: 12,
           padding: 12,
           boxSizing: "border-box",
         }}
       >
-        {/* 左上は意図的に空白。OBSで下のゲーム映像を見せる透明領域。 */}
+        {/* 左上：OBSでゲーム映像を見せる透明領域 */}
         <div style={{ gridColumn: "1", gridRow: "1", background: "transparent", pointerEvents: "none" }} />
 
-        {/* L字の縦側：ビンゴ盤面 */}
+        {/* 右側全体をビンゴ専用にして、2枚を大きく正方形に近づける */}
         <aside
           style={{
             gridColumn: "2",
-            gridRow: "1",
+            gridRow: "1 / -1",
             display: "grid",
             gridTemplateRows: "1fr 1fr",
             gap: 12,
             minHeight: 0,
           }}
         >
-          <StreamBoard
-            team="blue"
-            ids={boardData?.blue ?? []}
-            boardSize={boardSize}
-            claimed={blueClaimed}
-          />
-          <StreamBoard
-            team="red"
-            ids={boardData?.red ?? []}
-            boardSize={boardSize}
-            claimed={redClaimed}
-          />
+          <StreamBoard team="blue" ids={boardData?.blue ?? []} boardSize={boardSize} claimed={blueClaimed} />
+          <StreamBoard team="red" ids={boardData?.red ?? []} boardSize={boardSize} claimed={redClaimed} />
         </aside>
 
-        {/* L字の横側：対戦カード・スコア・メンバー */}
+        {/* 下段は左側だけ。対戦カード＋メンバー、ROOM/勝敗 */}
         <section
           style={{
-            gridColumn: "1 / -1",
+            gridColumn: "1",
             gridRow: "2",
             display: "grid",
-            gridTemplateColumns: showMembers ? "1.55fr 0.55fr 1fr" : "1.8fr 0.7fr",
+            gridTemplateColumns: "minmax(0, 1fr) 28%",
             gap: 12,
             minHeight: 0,
           }}
@@ -253,12 +243,15 @@ export default function StreamPage() {
           <div
             style={{
               minWidth: 0,
-              padding: 12,
+              padding: 10,
               borderRadius: 14,
               border: "2px solid rgba(255,255,255,0.2)",
               background: "rgba(8,9,13,0.96)",
               display: "grid",
+              gridTemplateRows: showMembers ? "minmax(0, 1fr) auto" : "1fr",
+              gap: 8,
               alignItems: "center",
+              overflow: "hidden",
             }}
           >
             <OverlayMatchInfo
@@ -268,47 +261,47 @@ export default function StreamPage() {
               activeRed={redPlayers.filter((p) => activeRedPlayerIds.includes(p.id))}
               activeBlue={bluePlayers.filter((p) => activeBluePlayerIds.includes(p.id))}
             />
+
+            {showMembers && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, minWidth: 0 }}>
+                <CompactMembers team="red" players={redPlayers} activeIds={activeIds} />
+                <CompactMembers team="blue" players={bluePlayers} activeIds={activeIds} />
+              </div>
+            )}
           </div>
 
           <div
             style={{
-              padding: 12,
+              padding: 10,
               borderRadius: 14,
               border: "2px solid rgba(255,255,255,0.2)",
               background: "rgba(8,9,13,0.96)",
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
-              gap: 10,
+              gap: 9,
               minWidth: 0,
+              overflow: "hidden",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 11, opacity: 0.58, fontWeight: 900 }}>TEAM BINGO ONLINE</div>
-                <div style={{ fontSize: 18, fontWeight: 1000, whiteSpace: "nowrap" }}>ROOM {roomCode}</div>
+                <div style={{ fontSize: 10, opacity: 0.58, fontWeight: 900 }}>TEAM BINGO ONLINE</div>
+                <div style={{ fontSize: 16, fontWeight: 1000, whiteSpace: "nowrap" }}>ROOM {roomCode}</div>
               </div>
               <StatusBadge status={matchStatus} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 5 }}>
               <Score team="red" count={matchResults.filter((r) => r.winning_team === "red").length} />
-              <div style={{ fontSize: 11, fontWeight: 1000, opacity: 0.55, textAlign: "center" }}>WINS</div>
+              <div style={{ fontSize: 10, fontWeight: 1000, opacity: 0.55, textAlign: "center" }}>WINS</div>
               <Score team="blue" count={matchResults.filter((r) => r.winning_team === "blue").length} />
             </div>
           </div>
-
-          {showMembers && (
-            <div style={{ display: "grid", gridTemplateRows: "1fr 1fr", gap: 8, minHeight: 0 }}>
-              <MemberBar team="red" players={redPlayers} activeIds={activeIds} />
-              <MemberBar team="blue" players={bluePlayers} activeIds={activeIds} />
-            </div>
-          )}
         </section>
       </div>
     </main>
   );
 }
-
 
 function OverlayMatchInfo({
   status,
@@ -542,7 +535,7 @@ function StreamBoard({
       {!ids.length ? (
         <div style={{ height: "calc(100% - 40px)", display: "grid", placeItems: "center", opacity: 0.5, fontWeight: 900 }}>盤面生成待ち</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`, gap: 5 }}>
+        <div style={{ width: "min(100%, 46vh)", margin: "0 auto", display: "grid", gridTemplateColumns: `repeat(${boardSize}, minmax(0, 1fr))`, gap: 5 }}>
           {ids.map((id, index) => {
             const character = getCharacter(id);
             const acquired = index === centerIndex || claimed.has(id);
@@ -570,6 +563,59 @@ function StreamBoard({
         </div>
       )}
     </section>
+  );
+}
+
+
+function CompactMembers({
+  team,
+  players,
+  activeIds,
+}: {
+  team: Team;
+  players: Player[];
+  activeIds: Set<string>;
+}) {
+  const color = team === "red" ? "#ff5252" : "#448aff";
+
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        padding: "5px 7px",
+        borderRadius: 9,
+        border: `1px solid ${color}`,
+        background: "rgba(255,255,255,0.035)",
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ color, fontSize: 10, fontWeight: 1000, whiteSpace: "nowrap" }}>
+        {team === "red" ? "🔴 RED" : "🔵 BLUE"}
+      </div>
+      <div style={{ display: "flex", gap: 5, minWidth: 0, overflow: "hidden" }}>
+        {players.map((player) => (
+          <div
+            key={player.id}
+            style={{
+              padding: "3px 6px",
+              borderRadius: 999,
+              background: activeIds.has(player.id) ? color : "rgba(255,255,255,0.1)",
+              color: activeIds.has(player.id) ? "white" : "rgba(255,255,255,0.72)",
+              fontSize: 10,
+              fontWeight: 900,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {player.player_name}
+            {player.is_leader ? " ⭐" : ""}
+            {player.is_host ? " 👑" : ""}
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
