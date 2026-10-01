@@ -982,6 +982,47 @@ export default function Home() {
 
               </button>
 
+              <div style={{ height: 1, backgroundColor: "#eee", margin: "14px 0" }} />
+
+              <button
+                type="button"
+                onClick={() => router.push("/stream")}
+                style={{
+                  width: "100%",
+                  padding: "13px 12px",
+                  border: "1px solid #ddd",
+                  borderRadius: 11,
+                  backgroundColor: "white",
+                  color: "#333",
+                  fontWeight: 900,
+                  fontSize: 16,
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                📺 配信者用ページ
+              </button>
+
+              <button
+                type="button"
+                onClick={() => router.push("/help")}
+                style={{
+                  width: "100%",
+                  marginTop: 10,
+                  padding: "13px 12px",
+                  border: "1px solid #ddd",
+                  borderRadius: 11,
+                  backgroundColor: "white",
+                  color: "#333",
+                  fontWeight: 900,
+                  fontSize: 16,
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                ❓ ヘルプ・使い方
+              </button>
+
             </div>
 
           </>
@@ -1445,27 +1486,6 @@ export default function Home() {
           </div>
 
         )}
-
-
-        <button
-          type="button"
-          onClick={() => router.push("/stream")}
-          style={{
-            width: "100%",
-            marginTop: 18,
-            padding: "14px 18px",
-            border: "2px solid #6a1b9a",
-            borderRadius: 12,
-            backgroundColor: "white",
-            color: "#6a1b9a",
-            fontSize: 16,
-            fontWeight: 900,
-            cursor: "pointer",
-          }}
-        >
-          📺 配信者用ページを開く
-        </button>
-
 
 
         {gameMode ===
