@@ -241,6 +241,8 @@ export default function GamePage() {
   const [selectedWinningTeam, setSelectedWinningTeam] =
     useState<Team>("red");
 
+  const [refreshingState, setRefreshingState] = useState(false);
+
   async function loadPlayers() {
     const { data, error } = await supabase
       .from("player")
@@ -337,6 +339,18 @@ export default function GamePage() {
       loadMatchResults(),
       loadCharacterPicks(),
     ]);
+  }
+
+  async function refreshGameStateManually() {
+    if (refreshingState) return;
+
+    setRefreshingState(true);
+
+    try {
+      await resyncGameState();
+    } finally {
+      setRefreshingState(false);
+    }
   }
 
   useEffect(() => {
@@ -1689,6 +1703,34 @@ export default function GamePage() {
             ROOM {roomCode}
           </div>
         </header>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginTop: -10,
+            marginBottom: 18,
+          }}
+        >
+          <button
+            type="button"
+            onClick={refreshGameStateManually}
+            disabled={refreshingState}
+            style={{
+              padding: "9px 14px",
+              borderRadius: 999,
+              border: "1px solid #d7d7d7",
+              backgroundColor: refreshingState ? "#f1f1f1" : "#ffffff",
+              color: "#555",
+              fontSize: 14,
+              fontWeight: 800,
+              cursor: refreshingState ? "default" : "pointer",
+              opacity: refreshingState ? 0.7 : 1,
+            }}
+          >
+            {refreshingState ? "更新中..." : "🔄 最新状態に更新"}
+          </button>
+        </div>
 
         <div
           className="responsive-team-grid"
