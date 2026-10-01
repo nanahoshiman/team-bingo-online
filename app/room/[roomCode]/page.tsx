@@ -40,6 +40,29 @@ export default function RoomPage() {
     setLoading(false);
   }
 
+  async function checkRoomStatus() {
+    const { data, error } = await supabase
+      .from("rooms")
+      .select("status")
+      .eq("room_code", roomCode)
+      .single();
+
+    if (error) {
+      console.error("ルーム状態取得エラー:", error);
+      return;
+    }
+
+    const status = String(data?.status ?? "");
+
+    if (status === "team_setup" || status === "teams_ready") {
+      router.push(`/room/${roomCode}/teams`);
+    }
+  }
+
+  async function resyncRoomState() {
+    await Promise.all([loadPlayers(), checkRoomStatus()]);
+  }
+
   async function startTeamSetup() {
     if (isStarting) return;
 
@@ -64,7 +87,7 @@ export default function RoomPage() {
     if (!roomCode) return;
 
     setMyPlayerId(sessionStorage.getItem("playerId"));
-    loadPlayers();
+    void resyncRoomState();
 
     const playerChannel = supabase
       .channel(`players-${roomCode}`)
@@ -77,7 +100,7 @@ export default function RoomPage() {
           filter: `room_code=eq.${roomCode}`,
         },
         () => {
-          loadPlayers();
+          void loadPlayers();
         }
       )
       .subscribe();
@@ -108,10 +131,30 @@ export default function RoomPage() {
     };
   }, [roomCode, router]);
 
+  useEffect(() => {
+    if (!roomCode) return;
+
+    const syncWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void resyncRoomState();
+    };
+
+    const syncWhenFocused = () => {
+      void resyncRoomState();
+    };
+
+    window.addEventListener("focus", syncWhenFocused);
+    document.addEventListener("visibilitychange", syncWhenVisible);
+
+    return () => {
+      window.removeEventListener("focus", syncWhenFocused);
+      document.removeEventListener("visibilitychange", syncWhenVisible);
+    };
+  }, [roomCode]);
+
   const playerCount = players.length;
   const isFull = playerCount >= MAX_PLAYERS;
-  const canStart =
-    playerCount >= MIN_PLAYERS && playerCount <= MAX_PLAYERS;
+  const canStart = playerCount >= MIN_PLAYERS && playerCount <= MAX_PLAYERS;
 
   const myPlayer = useMemo(
     () => players.find((player) => player.id === myPlayerId) ?? null,
@@ -127,8 +170,7 @@ export default function RoomPage() {
         display: "grid",
         placeItems: "center",
         padding: 20,
-        background:
-          "linear-gradient(180deg, #f8f9fc 0%, #eef1f6 100%)",
+        background: "linear-gradient(180deg, #f8f9fc 0%, #eef1f6 100%)",
         color: "#222",
       }}
     >
@@ -143,22 +185,10 @@ export default function RoomPage() {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 26 }}>
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "clamp(28px, 6vw, 40px)",
-            }}
-          >
+          <h1 style={{ margin: 0, fontSize: "clamp(28px, 6vw, 40px)" }}>
             ななほしのビンゴツール
           </h1>
-
-          <div
-            style={{
-              marginTop: 6,
-              color: "#6a1b9a",
-              fontWeight: 900,
-            }}
-          >
+          <div style={{ marginTop: 6, color: "#6a1b9a", fontWeight: 900 }}>
             ONLINE
           </div>
         </div>
@@ -173,16 +203,9 @@ export default function RoomPage() {
             marginBottom: 24,
           }}
         >
-          <div
-            style={{
-              color: "#666",
-              fontSize: 14,
-              fontWeight: 800,
-            }}
-          >
+          <div style={{ color: "#666", fontSize: 14, fontWeight: 800 }}>
             ルームコード
           </div>
-
           <div
             style={{
               marginTop: 4,
@@ -206,7 +229,6 @@ export default function RoomPage() {
           }}
         >
           <h2 style={{ margin: 0, fontSize: 20 }}>参加者</h2>
-
           <div
             style={{
               padding: "7px 11px",
@@ -222,20 +244,13 @@ export default function RoomPage() {
         </div>
 
         {loading ? (
-          <div
-            style={{
-              padding: 20,
-              textAlign: "center",
-              color: "#777",
-            }}
-          >
+          <div style={{ padding: 20, textAlign: "center", color: "#777" }}>
             読み込み中...
           </div>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {players.map((player, index) => {
               const isMe = player.id === myPlayerId;
-
               return (
                 <div
                   key={player.id}
@@ -245,9 +260,7 @@ export default function RoomPage() {
                     justifyContent: "space-between",
                     gap: 12,
                     padding: "13px 15px",
-                    border: isMe
-                      ? "2px solid #6a1b9a"
-                      : "1px solid #ddd",
+                    border: isMe ? "2px solid #6a1b9a" : "1px solid #ddd",
                     borderRadius: 12,
                     backgroundColor: isMe ? "#fbf5fd" : "#fafafa",
                     fontWeight: 800,
@@ -257,14 +270,8 @@ export default function RoomPage() {
                     {index + 1}. {player.player_name}
                     {isMe ? "（あなた）" : ""}
                   </span>
-
                   {player.is_host && (
-                    <span
-                      style={{
-                        color: "#d28b00",
-                        fontSize: 14,
-                      }}
-                    >
+                    <span style={{ color: "#d28b00", fontSize: 14 }}>
                       👑 ホスト
                     </span>
                   )}
@@ -286,8 +293,7 @@ export default function RoomPage() {
               fontWeight: 800,
             }}
           >
-            ゲーム開始まであと{" "}
-            {Math.max(0, MIN_PLAYERS - playerCount)}人必要です
+            ゲーム開始まであと {Math.max(0, MIN_PLAYERS - playerCount)}人必要です
           </div>
         )}
 
@@ -322,8 +328,7 @@ export default function RoomPage() {
               color: "white",
               fontSize: 18,
               fontWeight: 900,
-              cursor:
-                canStart && !isStarting ? "pointer" : "not-allowed",
+              cursor: canStart && !isStarting ? "pointer" : "not-allowed",
               opacity: canStart && !isStarting ? 1 : 0.45,
               boxShadow:
                 canStart && !isStarting
