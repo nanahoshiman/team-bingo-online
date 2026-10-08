@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 const TEAM_BINGO_MAX_PLAYERS = 8;
 const ALL_BATTLE_MAX_PLAYERS = 2;
 const SAVED_PLAYER_NAME_KEY = "teamBingoPlayerName";
+const HIDE_ROOM_NOTICE_KEY = "teamBingoHideRoomNoticeV1";
 type GameMode = "team-bingo" | "all-battle";
 function generateRoomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -22,6 +23,8 @@ export default function Home() {
   const [isJoining, setIsJoining] = useState(false);
   const [showJoinForm, setShowJoinForm] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showCreateNotice, setShowCreateNotice] = useState(false);
+  const [skipCreateNotice, setSkipCreateNotice] = useState(false);
   const [gameMode, setGameMode] =
     useState<GameMode>("team-bingo");
   useEffect(() => {
@@ -48,6 +51,28 @@ export default function Home() {
     localStorage.setItem("roomCode", code);
     localStorage.setItem("gameMode", dbGameMode);
   }
+  function handleCreateRoomClick() {
+    if (busy) return;
+    if (!playerName.trim()) {
+      alert("プレイヤー名を入力してください。");
+      return;
+    }
+    if (gameMode === "team-bingo" && localStorage.getItem(HIDE_ROOM_NOTICE_KEY) !== "true") {
+      setSkipCreateNotice(false);
+      setShowCreateNotice(true);
+      return;
+    }
+    void createRoom();
+  }
+
+  function confirmCreateRoom() {
+    if (skipCreateNotice) {
+      localStorage.setItem(HIDE_ROOM_NOTICE_KEY, "true");
+    }
+    setShowCreateNotice(false);
+    void createRoom();
+  }
+
   async function createRoom() {
     if (busy) return;
     const normalizedPlayerName =
@@ -592,7 +617,7 @@ export default function Home() {
         >
           <button
             type="button"
-            onClick={createRoom}
+            onClick={handleCreateRoomClick}
             disabled={busy}
             style={{
               width: "100%",
@@ -745,6 +770,37 @@ export default function Home() {
             1勝につき1ポイント
             <br />
             使用キャラは以降の抽選から除外
+          </div>
+        )}
+        {showCreateNotice && (
+          <div
+            role="presentation"
+            style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.58)", zIndex: 100, display: "grid", placeItems: "center", padding: 16 }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="room-notice-title"
+              style={{ width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box", background: "white", borderRadius: 18, padding: 24, boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}
+            >
+              <h2 id="room-notice-title" style={{ margin: "0 0 16px", fontSize: 22 }}>📢 ルーム作成前のお願い</h2>
+              <p style={{ lineHeight: 1.7 }}>チームビンゴを円滑に進行するため、以下の点にご協力ください。</p>
+              <div style={{ background: "#f6f2fb", padding: 16, borderRadius: 12, lineHeight: 1.8 }}>
+                <p style={{ marginTop: 0 }}><strong>① チームリーダーの設定</strong></p>
+                <p>ホストの方は、ご自身以外のプレイヤーを各チームのリーダーに設定してください。</p>
+                <p><strong>② 勝敗登録について</strong></p>
+                <p style={{ marginBottom: 0 }}>勝敗登録は、<strong>勝利したチームのリーダー</strong>が行ってください。</p>
+              </div>
+              <p style={{ fontSize: 13, color: "#555", lineHeight: 1.6 }}>※ スマホ版では、自分の所属チームが上に表示される仕様です。</p>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", margin: "18px 0" }}>
+                <input type="checkbox" checked={skipCreateNotice} onChange={(e) => setSkipCreateNotice(e.target.checked)} style={{ width: 18, height: 18 }} />
+                次回以降、この注意事項を表示しない
+              </label>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                <button type="button" onClick={() => { setShowCreateNotice(false); setSkipCreateNotice(false); }} disabled={busy} style={{ padding: "12px 16px", borderRadius: 10, border: "1px solid #ccc", background: "white", cursor: "pointer", fontWeight: 700 }}>キャンセル</button>
+                <button type="button" onClick={confirmCreateRoom} disabled={busy} style={{ padding: "12px 16px", borderRadius: 10, border: "none", background: "#6a1b9a", color: "white", cursor: "pointer", fontWeight: 800 }}>確認して部屋を作成</button>
+              </div>
+            </div>
           </div>
         )}
       </section>
