@@ -2507,9 +2507,6 @@ export default function GamePage() {
                   >
                     {undoingResult ? "取り消し中..." : "↩ 直前の試合の勝敗登録を取り消す（ホスト専用）"}
                   </button>
-                  <p style={{ fontSize: 13, color: "#666", marginBottom: 0 }}>
-                    新しい履歴保存方式で登録した試合のみ取り消せます。
-                  </p>
                 </section>
               )}
 
