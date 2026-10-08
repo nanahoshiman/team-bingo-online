@@ -234,6 +234,7 @@ export default function GamePage() {
   const [savingPick, setSavingPick] = useState(false);
   const [registeringResult, setRegisteringResult] =
     useState(false);
+  const [undoingResult, setUndoingResult] = useState(false);
 
   const [selectedCharacterId, setSelectedCharacterId] =
     useState<string | null>(null);
@@ -1144,298 +1145,70 @@ export default function GamePage() {
   }
 
   async function registerMatchResult() {
-    if (
-      !myPlayer ||
-      !allPlayersReady ||
-      !canRegisterAny ||
-      registeringResult
-    ) {
+    if (!myPlayer || !allPlayersReady || !canRegisterAny || registeringResult) return;
+
+    if (selectedWinningTeam === "red" && !canRegisterRed) {
+      alert("赤チームの勝利を登録する権限がありません。");
+      return;
+    }
+    if (selectedWinningTeam === "blue" && !canRegisterBlue) {
+      alert("青チームの勝利を登録する権限がありません。");
       return;
     }
 
-    if (
-      selectedWinningTeam === "red" &&
-      !canRegisterRed
-    ) {
-      alert(
-        "赤チームの勝利を登録する権限がありません。"
-      );
-      return;
-    }
+    const claimed = selectedWinningTeam === "red" ? claimedRedIds : claimedBlueIds;
+    const gained = new Set(
+      characterPicks
+        .filter((pick) => pick.is_ready && activePlayerIds.has(pick.player_id) && pick.team === selectedWinningTeam)
+        .map((pick) => pick.character_id)
+        .filter((id) => !claimed.has(id))
+    ).size;
 
-    if (
-      selectedWinningTeam === "blue" &&
-      !canRegisterBlue
-    ) {
-      alert(
-        "青チームの勝利を登録する権限がありません。"
-      );
-      return;
-    }
-
-      const winningPicks =
-        characterPicks.filter(
-          (pick) =>
-            pick.is_ready &&
-            activePlayerIds.has(pick.player_id) &&
-            pick.team ===
-              selectedWinningTeam
-        );
-
-      const existingClaimedIds =
-        selectedWinningTeam === "red"
-          ? claimedRedIds
-          : claimedBlueIds;
-
-      const uniqueWinningCharacterIds =
-        Array.from(
-          new Set(
-            winningPicks
-              .map(
-                (pick) =>
-                  pick.character_id
-              )
-              .filter(
-                (id) =>
-                  !existingClaimedIds.has(
-                    id
-                  )
-              )
-          )
-        );
-
-      if (
-        !window.confirm(
-          `${
-            selectedWinningTeam ===
-            "red"
-              ? "🔴 赤チーム"
-              : "🔵 青チーム"
-          }の勝利を登録しますか？\n\n獲得マス：${uniqueWinningCharacterIds.length}マス`
-        )
-      ) {
-        return;
-      }
+    if (!window.confirm(
+      `${selectedWinningTeam === "red" ? "🔴 赤チーム" : "🔵 青チーム"}の勝利を登録しますか？\n\n獲得マス：${gained}マス`
+    )) return;
 
     setRegisteringResult(true);
-
     try {
-      const {
-        data: lockRows,
-        error: lockError,
-      } = await supabase
-        .from("rooms")
-        .update({
-          match_status: "resolving",
-        })
-        .eq(
-          "room_code",
-          roomCode
-        )
-        .eq(
-          "match_status",
-          "in_match"
-        )
-        .select("room_code");
-
-      if (lockError) {
-        console.error(
-          "勝敗登録ロックエラー:",
-          lockError
-        );
-
-        alert(
-          "勝敗登録の開始に失敗しました。"
-        );
-
+      const { error } = await supabase.rpc("register_bingo_match", {
+        p_room_code: roomCode,
+        p_winning_team: selectedWinningTeam,
+        p_player_id: myPlayer.id,
+      });
+      if (error) {
+        console.error("勝敗登録エラー:", error);
+        alert(`勝敗登録に失敗しました。\n${error.message}`);
         return;
       }
-
-      if (
-        !lockRows ||
-        lockRows.length === 0
-      ) {
-        alert(
-          "この試合の勝敗はすでに登録処理されています。"
-        );
-
-        await loadRoom();
-        await loadCharacterPicks();
-        return;
-      }
-
-
-      if (
-        uniqueWinningCharacterIds.length >
-        0
-      ) {
-        const rows =
-          uniqueWinningCharacterIds.map(
-            (characterId) => ({
-              room_code:
-                roomCode,
-              winning_team:
-                selectedWinningTeam,
-              character_id:
-                characterId,
-              registered_by_player_id:
-                myPlayer.id,
-              registered_by_name:
-                myPlayer.player_name,
-            })
-          );
-
-        const { error: resultError } =
-          await supabase
-            .from(
-              "match_results"
-            )
-            .insert(rows);
-
-        if (resultError) {
-          console.error(
-            "勝敗登録エラー:",
-            resultError
-          );
-
-          await supabase
-            .from("rooms")
-            .update({
-              match_status:
-                "in_match",
-            })
-            .eq(
-              "room_code",
-              roomCode
-            )
-            .eq(
-              "match_status",
-              "resolving"
-            );
-
-          alert(
-            `勝敗登録に失敗しました。\n${resultError.message ?? ""}`
-          );
-
-          return;
-        }
-      }
-
-      const currentRedPicks =
-        Array.from(
-          new Set(
-            characterPicks
-              .filter(
-                (pick) =>
-                  pick.is_ready &&
-                  activePlayerIds.has(pick.player_id) &&
-                  pick.team === "red"
-              )
-              .map(
-                (pick) =>
-                  pick.character_id
-              )
-          )
-        );
-
-      const currentBluePicks =
-        Array.from(
-          new Set(
-            characterPicks
-              .filter(
-                (pick) =>
-                  pick.is_ready &&
-                  activePlayerIds.has(pick.player_id) &&
-                  pick.team === "blue"
-              )
-              .map(
-                (pick) =>
-                  pick.character_id
-              )
-          )
-        );
-
-      const { error: deleteError } =
-        await supabase
-          .from(
-            "character_picks"
-          )
-          .delete()
-          .eq(
-            "room_code",
-            roomCode
-          );
-
-      if (deleteError) {
-        console.error(
-          "キャラ選択リセットエラー:",
-          deleteError
-        );
-
-        alert(
-          `次試合へのリセットに失敗しました。\n${deleteError.message ?? ""}`
-        );
-
-        return;
-      }
-
-      const isFourPlayerGame = players.length === 4;
-      const nextRedPlayerIds = isFourPlayerGame
-        ? redPlayers.map((player) => player.id)
-        : [];
-      const nextBluePlayerIds = isFourPlayerGame
-        ? bluePlayers.map((player) => player.id)
-        : [];
-      const nextMatchStatus: MatchStatus = isFourPlayerGame
-        ? "picking"
-        : "selecting_players";
-
-      const { error: roomError } =
-        await supabase
-          .from("rooms")
-          .update({
-            last_red_picks:
-              currentRedPicks,
-            last_blue_picks:
-              currentBluePicks,
-            active_red_player_ids: nextRedPlayerIds,
-            active_blue_player_ids: nextBluePlayerIds,
-            match_status:
-              nextMatchStatus,
-          })
-          .eq(
-            "room_code",
-            roomCode
-          )
-          .eq(
-            "match_status",
-            "resolving"
-          );
-
-      if (roomError) {
-        console.error(
-          "次試合状態更新エラー:",
-          roomError
-        );
-
-        alert(
-          `次試合の準備に失敗しました。\n${roomError.message ?? ""}`
-        );
-
-        return;
-      }
-
-      setSelectedCharacterId(
-        null
-      );
-
-      await Promise.all([
-        loadRoom(),
-        loadMatchResults(),
-        loadCharacterPicks(),
-      ]);
+      setSelectedCharacterId(null);
+      await resyncGameState();
     } finally {
       setRegisteringResult(false);
+    }
+  }
+
+  async function undoLastMatchResult() {
+    if (!amHost || !myPlayer || undoingResult || registeringResult) return;
+    if (!window.confirm(
+      "直前の試合の勝敗登録を取り消しますか？\n\n獲得マスを戻し、4人のキャラ選択と試合中の状態を復元します。\n次の試合のキャラ選択が始まっている場合は取り消せません。"
+    )) return;
+
+    setUndoingResult(true);
+    try {
+      const { error } = await supabase.rpc("undo_last_bingo_match", {
+        p_room_code: roomCode,
+        p_player_id: myPlayer.id,
+      });
+      if (error) {
+        console.error("勝敗取り消しエラー:", error);
+        alert(`取り消しできませんでした。\n${error.message}`);
+        return;
+      }
+      setSelectedCharacterId(null);
+      await resyncGameState();
+      alert("直前の試合を取り消しました。勝敗を登録し直せます。");
+    } finally {
+      setUndoingResult(false);
     }
   }
 
@@ -2721,6 +2494,24 @@ export default function GamePage() {
               "resolving" && (
               <StatusBox text="勝敗を反映しています..." />
             )}
+
+            {amHost && boardData && !gameFinished &&
+              (matchStatus === "picking" || matchStatus === "selecting_players") &&
+              characterPicks.length === 0 && matchResults.length > 0 && (
+                <section style={{ marginTop: 18, padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
+                  <button
+                    type="button"
+                    onClick={undoLastMatchResult}
+                    disabled={undoingResult || registeringResult}
+                    style={{ width: "100%", padding: 13, borderRadius: 10, border: "1px solid #b71c1c", background: "#fff", color: "#b71c1c", fontWeight: 800, cursor: "pointer" }}
+                  >
+                    {undoingResult ? "取り消し中..." : "↩ 直前の試合の勝敗登録を取り消す（ホスト専用）"}
+                  </button>
+                  <p style={{ fontSize: 13, color: "#666", marginBottom: 0 }}>
+                    新しい履歴保存方式で登録した試合のみ取り消せます。
+                  </p>
+                </section>
+              )}
 
             <MatchHistory
               results={
