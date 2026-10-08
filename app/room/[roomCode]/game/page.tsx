@@ -1462,7 +1462,13 @@ export default function GamePage() {
           }}
         >
           <h1 style={{ margin: 0 }}>
-            ななほしのビンゴツール
+            <a
+              href="/"
+              style={{ color: "inherit", textDecoration: "none", cursor: "pointer" }}
+              title="ホーム画面に戻る"
+            >
+              ななほしのビンゴツール
+            </a>
           </h1>
 
           <div

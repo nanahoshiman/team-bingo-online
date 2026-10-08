@@ -1,20 +1,14 @@
 "use client";
 
-
-
 import { useEffect, useMemo, useState } from "react";
 
 import { useParams, useRouter } from "next/navigation";
 
 import { supabase } from "@/lib/supabase";
 
-
-
 type Team = "red" | "blue";
 
 type FixedTeam = Team | null;
-
-
 
 type Player = {
 
@@ -29,8 +23,6 @@ type Player = {
   team: Team | null;
 
 };
-
-
 
 function shuffleArray<T>(items: T[]) {
 
@@ -48,8 +40,6 @@ function shuffleArray<T>(items: T[]) {
 
 }
 
-
-
 function makeTeams(players: Player[], fixedTeams: Record<string, FixedTeam>) {
 
   const fixedRed = players.filter((player) => fixedTeams[player.id] === "red");
@@ -62,13 +52,9 @@ function makeTeams(players: Player[], fixedTeams: Record<string, FixedTeam>) {
 
   );
 
-
-
   const low = Math.floor(players.length / 2);
 
   const high = Math.ceil(players.length / 2);
-
-
 
   const candidates = Array.from(new Set([low, high]))
 
@@ -88,15 +74,11 @@ function makeTeams(players: Player[], fixedTeams: Record<string, FixedTeam>) {
 
     );
 
-
-
   if (candidates.length === 0) {
 
     throw new Error("固定人数が多すぎて、人数差1以内のチームを作れません。");
 
   }
-
-
 
   const chosen = candidates[Math.floor(Math.random() * candidates.length)];
 
@@ -105,8 +87,6 @@ function makeTeams(players: Player[], fixedTeams: Record<string, FixedTeam>) {
   const randomRed = unassigned.slice(0, redSlots);
 
   const randomBlue = unassigned.slice(redSlots);
-
-
 
   return {
 
@@ -118,8 +98,6 @@ function makeTeams(players: Player[], fixedTeams: Record<string, FixedTeam>) {
 
 }
 
-
-
 export default function TeamSetupPage() {
 
   const params = useParams();
@@ -127,8 +105,6 @@ export default function TeamSetupPage() {
   const router = useRouter();
 
   const roomCode = String(params.roomCode ?? "").toUpperCase();
-
-
 
   const [players, setPlayers] = useState<Player[]>([]);
 
@@ -148,26 +124,38 @@ export default function TeamSetupPage() {
 
   const [saving, setSaving] = useState(false);
 
-
-
   function getStoredPlayerId() {
+
     const sessionRoomCode = sessionStorage.getItem("roomCode");
+
     const sessionPlayerId = sessionStorage.getItem("playerId");
+
     if (sessionPlayerId && (!sessionRoomCode || sessionRoomCode === roomCode)) {
+
       return sessionPlayerId;
+
     }
 
     const savedRoomCode = localStorage.getItem("roomCode");
+
     const savedPlayerId = localStorage.getItem("playerId");
+
     if (savedPlayerId && savedRoomCode === roomCode) {
+
       sessionStorage.setItem("playerId", savedPlayerId);
+
       sessionStorage.setItem("roomCode", roomCode);
+
       const savedGameMode = localStorage.getItem("gameMode");
+
       if (savedGameMode) sessionStorage.setItem("gameMode", savedGameMode);
+
       return savedPlayerId;
+
     }
 
     return null;
+
   }
 
   async function loadPlayers() {
@@ -182,8 +170,6 @@ export default function TeamSetupPage() {
 
       .order("created_at", { ascending: true });
 
-
-
     if (error) {
 
       console.error("プレイヤー取得エラー:", error);
@@ -194,19 +180,13 @@ export default function TeamSetupPage() {
 
     }
 
-
-
     const nextPlayers = (data ?? []) as Player[];
 
     setPlayers(nextPlayers);
 
-
-
     const savedRed = nextPlayers.filter((player) => player.team === "red");
 
     const savedBlue = nextPlayers.filter((player) => player.team === "blue");
-
-
 
     if (savedRed.length > 0 || savedBlue.length > 0) {
 
@@ -220,13 +200,9 @@ export default function TeamSetupPage() {
 
     }
 
-
-
     setLoading(false);
 
   }
-
-
 
   async function checkRoomStatus() {
 
@@ -240,8 +216,6 @@ export default function TeamSetupPage() {
 
       .maybeSingle();
 
-
-
     if (error) {
 
       console.error("ルーム状態取得エラー:", error);
@@ -249,8 +223,6 @@ export default function TeamSetupPage() {
       return;
 
     }
-
-
 
     if (data?.status === "teams_ready") {
 
@@ -260,25 +232,21 @@ export default function TeamSetupPage() {
 
   }
 
-
-
   async function resyncTeamSetupState() {
+
     await Promise.all([loadPlayers(), checkRoomStatus()]);
+
   }
 
   useEffect(() => {
 
     if (!roomCode) return;
 
-
-
     setMyPlayerId(getStoredPlayerId());
 
     loadPlayers();
 
     checkRoomStatus();
-
-
 
     const playerChannel = supabase
 
@@ -305,8 +273,6 @@ export default function TeamSetupPage() {
       )
 
       .subscribe();
-
-
 
     const roomChannel = supabase
 
@@ -344,8 +310,6 @@ export default function TeamSetupPage() {
 
       .subscribe();
 
-
-
     return () => {
 
       supabase.removeChannel(playerChannel);
@@ -357,27 +321,36 @@ export default function TeamSetupPage() {
   }, [roomCode, router]);
 
   useEffect(() => {
+
     if (!roomCode) return;
 
     const syncWhenVisible = () => {
+
       if (document.visibilityState !== "visible") return;
+
       void resyncTeamSetupState();
+
     };
 
     const syncWhenFocused = () => {
+
       void resyncTeamSetupState();
+
     };
 
     window.addEventListener("focus", syncWhenFocused);
+
     document.addEventListener("visibilitychange", syncWhenVisible);
 
     return () => {
+
       window.removeEventListener("focus", syncWhenFocused);
+
       document.removeEventListener("visibilitychange", syncWhenVisible);
+
     };
+
   }, [roomCode]);
-
-
 
   const myPlayer = useMemo(
 
@@ -387,11 +360,7 @@ export default function TeamSetupPage() {
 
   );
 
-
-
   const amHost = myPlayer?.is_host === true;
-
-
 
   function clearPreviewAndLeaders() {
 
@@ -405,8 +374,6 @@ export default function TeamSetupPage() {
 
   }
 
-
-
   function setFixedTeam(playerId: string, team: FixedTeam) {
 
     setFixedTeams((current) => ({ ...current, [playerId]: team }));
@@ -414,8 +381,6 @@ export default function TeamSetupPage() {
     clearPreviewAndLeaders();
 
   }
-
-
 
   function previewTeams() {
 
@@ -439,13 +404,9 @@ export default function TeamSetupPage() {
 
   }
 
-
-
   async function saveTeams() {
 
     if (!amHost || saving) return;
-
-
 
     if (previewRed.length + previewBlue.length !== players.length) {
 
@@ -455,8 +416,6 @@ export default function TeamSetupPage() {
 
     }
 
-
-
     if (!redLeaderId || !blueLeaderId) {
 
       alert("赤チーム・青チームそれぞれ1人ずつリーダーを選んでください。");
@@ -464,8 +423,6 @@ export default function TeamSetupPage() {
       return;
 
     }
-
-
 
     if (
 
@@ -481,11 +438,7 @@ export default function TeamSetupPage() {
 
     }
 
-
-
     setSaving(true);
-
-
 
     try {
 
@@ -513,8 +466,6 @@ export default function TeamSetupPage() {
 
       ];
 
-
-
       const results = await Promise.all(
 
         updates.map(({ id, team, is_leader }) =>
@@ -525,11 +476,7 @@ export default function TeamSetupPage() {
 
       );
 
-
-
       const failed = results.find((result) => result.error);
-
-
 
       if (failed?.error) {
 
@@ -545,8 +492,6 @@ export default function TeamSetupPage() {
 
       }
 
-
-
       const { error: roomError } = await supabase
 
         .from("rooms")
@@ -554,8 +499,6 @@ export default function TeamSetupPage() {
         .update({ status: "teams_ready" })
 
         .eq("room_code", roomCode);
-
-
 
       if (roomError) {
 
@@ -566,8 +509,6 @@ export default function TeamSetupPage() {
         return;
 
       }
-
-
 
       router.push(`/room/${roomCode}/game`);
 
@@ -584,8 +525,6 @@ export default function TeamSetupPage() {
     }
 
   }
-
-
 
   if (loading) {
 
@@ -615,8 +554,6 @@ export default function TeamSetupPage() {
 
   }
 
-
-
   return (
 
     <main
@@ -639,7 +576,25 @@ export default function TeamSetupPage() {
 
         <div style={{ textAlign: "center", marginBottom: 24 }}>
 
-          <h1 style={{ margin: 0 }}>チーム分け</h1>
+          <button
+              type="button"
+              onClick={() => router.push("/")}
+              title="ホーム画面に戻る"
+              style={{
+                display: "block",
+                margin: "0 auto 10px",
+                padding: 0,
+                border: "none",
+                background: "transparent",
+                color: "#6a1b9a",
+                fontSize: 17,
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              ななほしのビンゴツール
+            </button>
+            <h1 style={{ margin: 0 }}>チーム分け</h1>
 
           <div style={{ marginTop: 6, color: "#6a1b9a", fontWeight: 900 }}>
 
@@ -648,8 +603,6 @@ export default function TeamSetupPage() {
           </div>
 
         </div>
-
-
 
         {amHost ? (
 
@@ -681,15 +634,11 @@ export default function TeamSetupPage() {
 
               </p>
 
-
-
               <div style={{ display: "grid", gap: 10 }}>
 
                 {players.map((player) => {
 
                   const fixedTeam = fixedTeams[player.id] ?? null;
-
-
 
                   return (
 
@@ -725,8 +674,6 @@ export default function TeamSetupPage() {
 
                       </strong>
 
-
-
                       <button
 
                         type="button"
@@ -754,8 +701,6 @@ export default function TeamSetupPage() {
                         未指定
 
                       </button>
-
-
 
                       <button
 
@@ -786,8 +731,6 @@ export default function TeamSetupPage() {
                         🔴 赤固定
 
                       </button>
-
-
 
                       <button
 
@@ -828,8 +771,6 @@ export default function TeamSetupPage() {
               </div>
 
             </section>
-
-
 
             <button
 
@@ -897,8 +838,6 @@ export default function TeamSetupPage() {
 
         )}
 
-
-
         {(previewRed.length > 0 || previewBlue.length > 0) && (
 
           <>
@@ -939,15 +878,11 @@ export default function TeamSetupPage() {
 
                 </h2>
 
-
-
                 {previewRed.map((player) => {
 
                   const isFixed = fixedTeams[player.id] === "red";
 
                   const isLeader = player.id === redLeaderId;
-
-
 
                   return (
 
@@ -995,8 +930,6 @@ export default function TeamSetupPage() {
 
                       </div>
 
-
-
                       {amHost && (
 
                         <button
@@ -1043,8 +976,6 @@ export default function TeamSetupPage() {
 
               </section>
 
-
-
               <section
 
                 style={{
@@ -1067,15 +998,11 @@ export default function TeamSetupPage() {
 
                 </h2>
 
-
-
                 {previewBlue.map((player) => {
 
                   const isFixed = fixedTeams[player.id] === "blue";
 
                   const isLeader = player.id === blueLeaderId;
-
-
 
                   return (
 
@@ -1122,8 +1049,6 @@ export default function TeamSetupPage() {
                         {player.is_host ? " 👑" : ""}
 
                       </div>
-
-
 
                       {amHost && (
 
@@ -1173,8 +1098,6 @@ export default function TeamSetupPage() {
 
             </div>
 
-
-
             {amHost && (
 
               <div
@@ -1212,8 +1135,6 @@ export default function TeamSetupPage() {
           </>
 
         )}
-
-
 
         {amHost && previewRed.length + previewBlue.length === players.length && (
 
