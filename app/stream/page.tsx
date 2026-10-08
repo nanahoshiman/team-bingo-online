@@ -1,18 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function StreamLauncherPage() {
-  const router = useRouter();
   const [roomCode, setRoomCode] = useState("");
+  const [copied, setCopied] = useState(false);
 
   const normalized = roomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
   const ready = normalized.length === 6;
+  const streamPath = `/room/${normalized}/stream`;
 
   function openStream() {
     if (!ready) return;
-    router.push(`/room/${normalized}/stream`);
+    window.open(streamPath, "_blank", "noopener,noreferrer");
+  }
+
+
+  async function copyStreamUrl() {
+    if (!ready) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${streamPath}`);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+      window.alert("コピーできませんでした。ブラウザの権限を確認してください。");
+    }
   }
 
   return (
@@ -39,7 +51,7 @@ export default function StreamLauncherPage() {
       >
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => window.location.assign("/")}
           style={{ border: "none", background: "transparent", padding: 0, color: "#6a1b9a", fontWeight: 900, cursor: "pointer" }}
         >
           ← トップへ戻る
@@ -58,9 +70,10 @@ export default function StreamLauncherPage() {
           ルームコード
           <input
             value={roomCode}
-            onChange={(e) =>
-              setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6))
-            }
+            onChange={(e) => {
+              setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6));
+              setCopied(false);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") openStream();
             }}
@@ -103,6 +116,7 @@ export default function StreamLauncherPage() {
           📺 この部屋の配信画面を開く
         </button>
 
+
         {ready && (
           <div
             style={{
@@ -116,11 +130,43 @@ export default function StreamLauncherPage() {
           >
             <div style={{ fontWeight: 1000, color: "#4a126d" }}>OBSブラウザソース用</div>
             <div style={{ marginTop: 5, fontFamily: "monospace", fontSize: 13, wordBreak: "break-all", color: "#555" }}>
-              /room/{normalized}/stream
+              {streamPath}
             </div>
             <div style={{ marginTop: 8, fontSize: 13, color: "#777" }}>OBSでは幅1920・高さ1080で使用します。</div>
+            <button
+              type="button"
+              onClick={() => void copyStreamUrl()}
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                borderRadius: 9,
+                border: "1px solid #cdb5dc",
+                background: "white",
+                color: "#6a1b9a",
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              {copied ? "✓ URLをコピーしました" : "📋 OBS用URLをコピー"}
+            </button>
           </div>
         )}
+
+        <div style={{ marginTop: 26, paddingTop: 22, borderTop: "1px solid #e3d8ec" }}>
+          <h2 style={{ margin: "0 0 12px", color: "#4a126d", fontSize: 21 }}>OBSへの追加方法</h2>
+          <ol style={{ paddingLeft: 23, margin: 0, color: "#444", lineHeight: 1.9 }}>
+            <li>上の欄に6文字のルームコードを入力します。</li>
+            <li>「OBS用URLをコピー」を押します。</li>
+            <li>OBSの「ソース」欄で「＋」→「ブラウザ」を選びます。</li>
+            <li>ブラウザソースの「URL」にコピーしたアドレスを貼り付けます。</li>
+            <li>幅を「1920」、高さを「1080」に設定して「OK」を押します。</li>
+            <li>ゲーム映像のソースより上にブラウザソースを配置します。</li>
+          </ol>
+          <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "#faf7fc", color: "#555", fontSize: 14, lineHeight: 1.7 }}>
+            <strong>推奨設定：</strong>幅 1920 × 高さ 1080（16:9）。配信画面はゲーム映像を重ねられるよう背景が透明になっています。
+            OBSではゲーム映像の上に重ねて使用してください。
+          </div>
+        </div>
       </section>
     </main>
   );

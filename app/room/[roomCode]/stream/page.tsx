@@ -225,9 +225,9 @@ export default function StreamPage() {
             minHeight: 0,
           }}
         >
-          <StreamBoard team="blue" ids={boardData?.blue ?? []} boardSize={boardSize} claimed={blueClaimed} />
-          <StreamBoard team="red" ids={boardData?.red ?? []} boardSize={boardSize} claimed={redClaimed} />
-        </aside>
+       <StreamBoard team="red" ids={boardData?.red ?? []} boardSize={boardSize} claimed={redClaimed} />
+<StreamBoard team="blue" ids={boardData?.blue ?? []} boardSize={boardSize} claimed={blueClaimed} />
+</aside>
 
         {/* 下段は左側だけ。対戦カード＋メンバー、ROOM/勝敗 */}
         <section

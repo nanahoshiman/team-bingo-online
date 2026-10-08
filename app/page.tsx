@@ -1,24 +1,16 @@
 "use client";
 
-
-
 import { useRouter } from "next/navigation";
 
 import { useState } from "react";
 
 import { supabase } from "@/lib/supabase";
 
-
-
 const TEAM_BINGO_MAX_PLAYERS = 8;
 
 const ALL_BATTLE_MAX_PLAYERS = 2;
 
-
-
 type GameMode = "team-bingo" | "all-battle";
-
-
 
 function generateRoomCode() {
 
@@ -26,27 +18,19 @@ function generateRoomCode() {
 
   let result = "";
 
-
-
   for (let i = 0; i < 6; i += 1) {
 
     result += chars[Math.floor(Math.random() * chars.length)];
 
   }
 
-
-
   return result;
 
 }
 
-
-
 export default function Home() {
 
   const router = useRouter();
-
-
 
   const [roomCode, setRoomCode] = useState("");
 
@@ -58,19 +42,13 @@ export default function Home() {
 
   const [showJoinForm, setShowJoinForm] = useState(false);
 
-
-
   const [menuOpen, setMenuOpen] = useState(false);
 
   const [gameMode, setGameMode] =
 
     useState<GameMode>("team-bingo");
 
-
-
   const busy = isCreating || isJoining;
-
-
 
   function getDbGameMode() {
 
@@ -82,8 +60,6 @@ export default function Home() {
 
   }
 
-
-
   function getRoomPath(code: string) {
 
     return gameMode === "team-bingo"
@@ -94,29 +70,29 @@ export default function Home() {
 
   }
 
-
-
   function savePlayerIdentity(playerId: string, code: string, dbGameMode: string) {
+
     sessionStorage.setItem("playerId", playerId);
+
     sessionStorage.setItem("roomCode", code);
+
     sessionStorage.setItem("gameMode", dbGameMode);
 
     localStorage.setItem("playerId", playerId);
+
     localStorage.setItem("roomCode", code);
+
     localStorage.setItem("gameMode", dbGameMode);
+
   }
 
   async function createRoom() {
 
     if (busy) return;
 
-
-
     const normalizedPlayerName =
 
       playerName.trim();
-
-
 
     if (!normalizedPlayerName) {
 
@@ -126,11 +102,7 @@ export default function Home() {
 
     }
 
-
-
     setIsCreating(true);
-
-
 
     try {
 
@@ -147,8 +119,6 @@ export default function Home() {
         const newCode =
 
           generateRoomCode();
-
-
 
         const { error: roomError } =
 
@@ -168,8 +138,6 @@ export default function Home() {
 
             });
 
-
-
         if (roomError) {
 
           if (
@@ -182,11 +150,7 @@ export default function Home() {
 
           }
 
-
-
           console.error(roomError);
-
-
 
           alert(
 
@@ -194,13 +158,9 @@ export default function Home() {
 
           );
 
-
-
           return;
 
         }
-
-
 
         const {
 
@@ -230,8 +190,6 @@ export default function Home() {
 
           .single();
 
-
-
         if (
 
           playerError ||
@@ -242,21 +200,15 @@ export default function Home() {
 
           console.error(playerError);
 
-
-
           alert(
 
             "ホストの登録に失敗しました。"
 
           );
 
-
-
           return;
 
         }
-
-
 
         savePlayerIdentity(hostPlayer.id, newCode, getDbGameMode());
 
@@ -266,13 +218,9 @@ export default function Home() {
 
         );
 
-
-
         return;
 
       }
-
-
 
       alert(
 
@@ -288,25 +236,17 @@ export default function Home() {
 
   }
 
-
-
   async function handleJoinRoom() {
 
     if (busy) return;
-
-
 
     const normalizedRoomCode =
 
       roomCode.trim().toUpperCase();
 
-
-
     const normalizedPlayerName =
 
       playerName.trim();
-
-
 
     if (!normalizedPlayerName) {
 
@@ -319,8 +259,6 @@ export default function Home() {
       return;
 
     }
-
-
 
     if (
 
@@ -338,11 +276,7 @@ export default function Home() {
 
     }
 
-
-
     setIsJoining(true);
-
-
 
     try {
 
@@ -372,8 +306,6 @@ export default function Home() {
 
         .maybeSingle();
 
-
-
       if (
 
         roomError ||
@@ -392,13 +324,9 @@ export default function Home() {
 
       }
 
-
-
       const expectedMode =
 
         getDbGameMode();
-
-
 
       if (
 
@@ -421,62 +349,102 @@ export default function Home() {
       }
 
       // 同じ端末にこのルームのプレイヤー情報が残っている場合は、
+
       // 新規プレイヤーを作らず既存プレイヤーとして復帰する。
+
       const storedPlayerId = localStorage.getItem("playerId");
+
       const storedRoomCode = localStorage.getItem("roomCode");
+
       const storedGameMode = localStorage.getItem("gameMode");
 
       if (
+
         storedPlayerId &&
+
         storedRoomCode === normalizedRoomCode &&
+
         storedGameMode === expectedMode
+
       ) {
+
         const { data: existingPlayer, error: existingPlayerError } =
+
           await supabase
+
             .from("player")
+
             .select("id, player_name")
+
             .eq("id", storedPlayerId)
+
             .eq("room_code", normalizedRoomCode)
+
             .maybeSingle();
 
         if (
+
           !existingPlayerError &&
+
           existingPlayer &&
+
           existingPlayer.player_name === normalizedPlayerName
+
         ) {
+
           savePlayerIdentity(
+
             existingPlayer.id,
+
             normalizedRoomCode,
+
             expectedMode
+
           );
 
           if (gameMode === "team-bingo") {
+
             if (room.status === "team_setup") {
+
               router.push(`/room/${normalizedRoomCode}/teams`);
+
             } else if (room.status === "teams_ready") {
+
               router.push(`/room/${normalizedRoomCode}/game`);
+
             } else {
+
               router.push(`/room/${normalizedRoomCode}`);
+
             }
+
           } else {
+
             router.push(
+
               room.status === "waiting"
+
                 ? `/battle/${normalizedRoomCode}`
+
                 : `/battle/${normalizedRoomCode}/game`
+
             );
+
           }
 
           return;
+
         }
 
         // localStorageだけ古い場合は破棄して通常の新規参加へ進む。
+
         localStorage.removeItem("playerId");
+
         localStorage.removeItem("roomCode");
+
         localStorage.removeItem("gameMode");
+
       }
-
-
-
 
       if (
 
@@ -493,8 +461,6 @@ export default function Home() {
         return;
 
       }
-
-
 
       const {
 
@@ -522,13 +488,9 @@ export default function Home() {
 
         );
 
-
-
       if (countError) {
 
         console.error(countError);
-
-
 
         alert(
 
@@ -536,13 +498,9 @@ export default function Home() {
 
         );
 
-
-
         return;
 
       }
-
-
 
       const maxPlayers =
 
@@ -551,8 +509,6 @@ export default function Home() {
           ? TEAM_BINGO_MAX_PLAYERS
 
           : ALL_BATTLE_MAX_PLAYERS;
-
-
 
       if (
 
@@ -573,8 +529,6 @@ export default function Home() {
         return;
 
       }
-
-
 
       const {
 
@@ -606,8 +560,6 @@ export default function Home() {
 
         .single();
 
-
-
       if (
 
         playerError ||
@@ -618,21 +570,15 @@ export default function Home() {
 
         console.error(playerError);
 
-
-
         alert(
 
           "部屋への参加に失敗しました。"
 
         );
 
-
-
         return;
 
       }
-
-
 
       savePlayerIdentity(joinedPlayer.id, normalizedRoomCode, expectedMode);
 
@@ -654,8 +600,6 @@ export default function Home() {
 
   }
 
-
-
   function selectMode(
 
     mode: GameMode
@@ -671,8 +615,6 @@ export default function Home() {
     setShowJoinForm(false);
 
   }
-
-
 
   return (
 
@@ -774,8 +716,6 @@ export default function Home() {
 
         </button>
 
-
-
         {menuOpen && (
 
           <>
@@ -803,8 +743,6 @@ export default function Home() {
               }}
 
             />
-
-
 
             <div
 
@@ -855,8 +793,6 @@ export default function Home() {
                 ゲームモード
 
               </div>
-
-
 
               <button
 
@@ -917,8 +853,6 @@ export default function Home() {
                 🎲 チームビンゴ
 
               </button>
-
-
 
               <button
 
@@ -985,42 +919,80 @@ export default function Home() {
               <div style={{ height: 1, backgroundColor: "#eee", margin: "14px 0" }} />
 
               <button
+
                 type="button"
-                onClick={() => router.push("/stream")}
+
+                onClick={() => {
+                    window.open("/stream", "_blank", "noopener,noreferrer");
+                    setMenuOpen(false);
+                  }}
+
                 style={{
+
                   width: "100%",
+
                   padding: "13px 12px",
+
                   border: "1px solid #ddd",
+
                   borderRadius: 11,
+
                   backgroundColor: "white",
+
                   color: "#333",
+
                   fontWeight: 900,
+
                   fontSize: 16,
+
                   textAlign: "left",
+
                   cursor: "pointer",
+
                 }}
+
               >
+
                 📺 配信者用ページ
+
               </button>
 
               <button
+
                 type="button"
+
                 onClick={() => router.push("/help")}
+
                 style={{
+
                   width: "100%",
+
                   marginTop: 10,
+
                   padding: "13px 12px",
+
                   border: "1px solid #ddd",
+
                   borderRadius: 11,
+
                   backgroundColor: "white",
+
                   color: "#333",
+
                   fontWeight: 900,
+
                   fontSize: 16,
+
                   textAlign: "left",
+
                   cursor: "pointer",
+
                 }}
+
               >
+
                 ❓ ヘルプ・使い方
+
               </button>
 
             </div>
@@ -1028,8 +1000,6 @@ export default function Home() {
           </>
 
         )}
-
-
 
         <div
 
@@ -1069,8 +1039,6 @@ export default function Home() {
 
           </h1>
 
-
-
           <div
 
             style={{
@@ -1098,8 +1066,6 @@ export default function Home() {
             ONLINE
 
           </div>
-
-
 
           <div
 
@@ -1129,8 +1095,6 @@ export default function Home() {
 
         </div>
 
-
-
         <label
 
           style={{
@@ -1146,8 +1110,6 @@ export default function Home() {
         >
 
           プレイヤー名
-
-
 
           <input
 
@@ -1192,8 +1154,6 @@ export default function Home() {
           />
 
         </label>
-
-
 
         <div
 
@@ -1267,8 +1227,6 @@ export default function Home() {
 
           </button>
 
-
-
           <button
 
             type="button"
@@ -1323,8 +1281,6 @@ export default function Home() {
 
         </div>
 
-
-
         {showJoinForm && (
 
           <div
@@ -1364,8 +1320,6 @@ export default function Home() {
             >
 
               ルームコード
-
-
 
               <input
 
@@ -1429,8 +1383,6 @@ export default function Home() {
 
             </label>
 
-
-
             <button
 
               type="button"
@@ -1486,7 +1438,6 @@ export default function Home() {
           </div>
 
         )}
-
 
         {gameMode ===
 
