@@ -1173,6 +1173,50 @@ export default function GamePage() {
       return;
     }
 
+      const winningPicks =
+        characterPicks.filter(
+          (pick) =>
+            pick.is_ready &&
+            activePlayerIds.has(pick.player_id) &&
+            pick.team ===
+              selectedWinningTeam
+        );
+
+      const existingClaimedIds =
+        selectedWinningTeam === "red"
+          ? claimedRedIds
+          : claimedBlueIds;
+
+      const uniqueWinningCharacterIds =
+        Array.from(
+          new Set(
+            winningPicks
+              .map(
+                (pick) =>
+                  pick.character_id
+              )
+              .filter(
+                (id) =>
+                  !existingClaimedIds.has(
+                    id
+                  )
+              )
+          )
+        );
+
+      if (
+        !window.confirm(
+          `${
+            selectedWinningTeam ===
+            "red"
+              ? "🔴 赤チーム"
+              : "🔵 青チーム"
+          }の勝利を登録しますか？\n\n獲得マス：${uniqueWinningCharacterIds.length}マス`
+        )
+      ) {
+        return;
+      }
+
     setRegisteringResult(true);
 
     try {
@@ -1220,64 +1264,6 @@ export default function GamePage() {
         return;
       }
 
-      const winningPicks =
-        characterPicks.filter(
-          (pick) =>
-            pick.is_ready &&
-            activePlayerIds.has(pick.player_id) &&
-            pick.team ===
-              selectedWinningTeam
-        );
-
-      const existingClaimedIds =
-        selectedWinningTeam === "red"
-          ? claimedRedIds
-          : claimedBlueIds;
-
-      const uniqueWinningCharacterIds =
-        Array.from(
-          new Set(
-            winningPicks
-              .map(
-                (pick) =>
-                  pick.character_id
-              )
-              .filter(
-                (id) =>
-                  !existingClaimedIds.has(
-                    id
-                  )
-              )
-          )
-        );
-
-      if (
-        !window.confirm(
-          `${
-            selectedWinningTeam ===
-            "red"
-              ? "🔴 赤チーム"
-              : "🔵 青チーム"
-          }の勝利を登録しますか？\n\n獲得マス：${uniqueWinningCharacterIds.length}マス`
-        )
-      ) {
-        await supabase
-          .from("rooms")
-          .update({
-            match_status:
-              "in_match",
-          })
-          .eq(
-            "room_code",
-            roomCode
-          )
-          .eq(
-            "match_status",
-            "resolving"
-          );
-
-        return;
-      }
 
       if (
         uniqueWinningCharacterIds.length >
