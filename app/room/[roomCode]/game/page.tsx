@@ -7,7 +7,7 @@ import { characters } from "@/lib/characters";
 
 type Team = "red" | "blue";
 type BoardSize = 3 | 5 | 7;
-type MatchStatus = "selecting_players" | "picking" | "in_match" | "resolving";
+type MatchStatus = "selecting_players" | "picking" | "in_match" | "resolving" | "waiting_next_match";
 
 type Player = {
   id: string;
@@ -84,7 +84,8 @@ function isMatchStatus(value: unknown): value is MatchStatus {
     value === "selecting_players" ||
     value === "picking" ||
     value === "in_match" ||
-    value === "resolving"
+    value === "resolving" ||
+    value === "waiting_next_match"
   );
 }
 
@@ -215,14 +216,7 @@ export default function GamePage() {
   const [activeBluePlayerIds, setActiveBluePlayerIds] =
     useState<string[]>([]);
 
-  const [draftRedPlayerIds, setDraftRedPlayerIds] =
-    useState<string[]>([]);
-
-  const [draftBluePlayerIds, setDraftBluePlayerIds] =
-    useState<string[]>([]);
-
-  const [savingActivePlayers, setSavingActivePlayers] =
-    useState(false);
+  const [advancingMatch, setAdvancingMatch] = useState(false);
 
   const [matchResults, setMatchResults] =
     useState<MatchResult[]>([]);
@@ -415,7 +409,7 @@ export default function GamePage() {
         async (payload) => {
           const nextStatus = payload.new.match_status;
 
-          if (nextStatus === "picking" || nextStatus === "selecting_players") {
+          if (nextStatus === "picking" || nextStatus === "selecting_players" || nextStatus === "waiting_next_match") {
             // 勝敗登録が終わって次の試合に入った瞬間、
             // 全ブラウザで前試合のピック状態を即クリアする。
             setCharacterPicks([]);
@@ -687,222 +681,75 @@ export default function GamePage() {
     }
   }, [myPlayer, amHost, amLeader]);
 
-  useEffect(() => {
-    if (matchStatus !== "selecting_players") return;
-
-    setDraftRedPlayerIds(
-      activeRedPlayerIds.length > 0
-        ? activeRedPlayerIds.slice(0, 2)
-        : redPlayers.length === 2
-          ? redPlayers.map((player) => player.id)
-          : []
-    );
-
-    setDraftBluePlayerIds(
-      activeBluePlayerIds.length > 0
-        ? activeBluePlayerIds.slice(0, 2)
-        : bluePlayers.length === 2
-          ? bluePlayers.map((player) => player.id)
-          : []
-    );
-  }, [
-    matchStatus,
-    activeRedPlayerIds,
-    activeBluePlayerIds,
-    redPlayers,
-    bluePlayers,
-  ]);
-
   async function generateBoards() {
-    if (!amHost || generating) return;
+    if (!amHost || !myPlayer || generating) return;
 
-    if (
-      matchResults.length > 0 ||
-      characterPicks.length > 0
-    ) {
-      alert(
-        "ゲーム進行開始後は盤面を再生成できません。"
-      );
+    if (boardData !== null || matchResults.length > 0 || characterPicks.length > 0) {
+      alert("ゲーム進行開始後は盤面を再生成できません。");
       return;
     }
 
-    const totalCells =
-      boardSize * boardSize;
+    const totalCells = boardSize * boardSize;
+    if (characters.length < totalCells) {
+      alert("盤面生成に必要なキャラクター数が足りません。");
+      return;
+    }
 
-    if (
-      characters.length <
-      totalCells
-    ) {
-      alert(
-        "盤面生成に必要なキャラクター数が足りません。"
-      );
+    if (redPlayers.length < 2 || bluePlayers.length < 2 ||
+        redPlayers.length > 4 || bluePlayers.length > 4) {
+      alert("赤・青それぞれ2〜4人でチームを構成してください。");
       return;
     }
 
     setGenerating(true);
-
     try {
       const nextBoardData: BoardData = {
         red: makeBoard(boardSize),
         blue: makeBoard(boardSize),
       };
 
-      const isFourPlayerGame = players.length === 4;
-      const initialRedPlayerIds = isFourPlayerGame
-        ? redPlayers.map((player) => player.id)
-        : [];
-      const initialBluePlayerIds = isFourPlayerGame
-        ? bluePlayers.map((player) => player.id)
-        : [];
-      const nextMatchStatus: MatchStatus = isFourPlayerGame
-        ? "picking"
-        : "selecting_players";
-
-      const { error } = await supabase
-        .from("rooms")
-        .update({
-          board_size: boardSize,
-          board_data: nextBoardData,
-          match_status: nextMatchStatus,
-          last_red_picks: [],
-          last_blue_picks: [],
-          active_red_player_ids: initialRedPlayerIds,
-          active_blue_player_ids: initialBluePlayerIds,
-        })
-        .eq(
-          "room_code",
-          roomCode
-        );
+      // 盤面保存と初回対戦者の選出を、DBの1トランザクションで確定する。
+      // 途中で失敗した場合は盤面だけが保存されることもない。
+      const { error } = await supabase.rpc("start_bingo_rotation", {
+        p_room_code: roomCode,
+        p_player_id: myPlayer.id,
+        p_board_size: boardSize,
+        p_board_data: nextBoardData,
+      });
 
       if (error) {
-        console.error(
-          "盤面保存エラー:",
-          error
-        );
-
-        alert(
-          `ビンゴカードの保存に失敗しました。\n${error.message ?? ""}`
-        );
-
+        console.error("初回盤面・対戦者選出エラー:", error);
+        alert(`ビンゴカードの生成に失敗しました。\n${error.message}`);
+        await resyncGameState();
         return;
       }
 
-      setBoardData(nextBoardData);
-      setMatchStatus(nextMatchStatus);
-      setLastRedPicks([]);
-      setLastBluePicks([]);
-      setActiveRedPlayerIds(initialRedPlayerIds);
-      setActiveBluePlayerIds(initialBluePlayerIds);
+      setSelectedCharacterId(null);
+      await resyncGameState();
     } finally {
       setGenerating(false);
     }
   }
 
-  function canEditTeamSelection(team: Team) {
-    return (
-      matchStatus === "selecting_players" &&
-      amLeader &&
-      myPlayer?.team === team
-    );
-  }
+  async function advanceMatch(isInitial = false) {
+    if (!amHost || !myPlayer || (advancingMatch && !isInitial)) return;
+    if (!isInitial && matchStatus !== "waiting_next_match" && matchStatus !== "selecting_players") return;
 
-  function toggleDraftPlayer(team: Team, playerId: string) {
-    if (!canEditTeamSelection(team)) return;
-
-    const teamPlayers = team === "red" ? redPlayers : bluePlayers;
-    if (!teamPlayers.some((player) => player.id === playerId)) return;
-
-    const current = team === "red" ? draftRedPlayerIds : draftBluePlayerIds;
-    const setter = team === "red" ? setDraftRedPlayerIds : setDraftBluePlayerIds;
-
-    if (current.includes(playerId)) {
-      setter(current.filter((id) => id !== playerId));
-      return;
-    }
-
-    if (current.length >= 2) return;
-    setter([...current, playerId]);
-  }
-
-  async function confirmActivePlayers(team: Team) {
-    if (
-      !canEditTeamSelection(team) ||
-      savingActivePlayers ||
-      matchStatus !== "selecting_players"
-    ) {
-      return;
-    }
-
-    const selectedIds =
-      team === "red" ? draftRedPlayerIds : draftBluePlayerIds;
-
-    if (selectedIds.length !== 2) return;
-
-    setSavingActivePlayers(true);
-
+    setAdvancingMatch(true);
     try {
-      const updatePayload =
-        team === "red"
-          ? { active_red_player_ids: selectedIds }
-          : { active_blue_player_ids: selectedIds };
-
-      const { error } = await supabase
-        .from("rooms")
-        .update(updatePayload)
-        .eq("room_code", roomCode)
-        .eq("match_status", "selecting_players");
-
+      const { error } = await supabase.rpc("advance_bingo_match", {
+        p_room_code: roomCode,
+        p_player_id: myPlayer.id,
+      });
       if (error) {
-        console.error("対戦者保存エラー:", error);
-        alert(`対戦者の保存に失敗しました。\n${error.message ?? ""}`);
+        console.error("対戦者自動選出エラー:", error);
+        alert(`対戦者の自動選出に失敗しました。\n${error.message}`);
         return;
       }
-
-      if (team === "red") {
-        setActiveRedPlayerIds(selectedIds);
-      } else {
-        setActiveBluePlayerIds(selectedIds);
-      }
-
-      // 相手チームの確定と同時になっても取りこぼさないよう、
-      // DBの最新状態を読み直してから4人が揃ったか判定する。
-      const { data: latestRoom, error: latestRoomError } = await supabase
-        .from("rooms")
-        .select("active_red_player_ids, active_blue_player_ids, match_status")
-        .eq("room_code", roomCode)
-        .maybeSingle();
-
-      if (latestRoomError) {
-        console.error("対戦者確定状態取得エラー:", latestRoomError);
-        await loadRoom();
-        return;
-      }
-
-      const latestRedIds = stringArray(latestRoom?.active_red_player_ids);
-      const latestBlueIds = stringArray(latestRoom?.active_blue_player_ids);
-
-      if (
-        latestRoom?.match_status === "selecting_players" &&
-        latestRedIds.length === 2 &&
-        latestBlueIds.length === 2
-      ) {
-        const { error: startPickError } = await supabase
-          .from("rooms")
-          .update({ match_status: "picking" })
-          .eq("room_code", roomCode)
-          .eq("match_status", "selecting_players");
-
-        if (startPickError) {
-          console.error("キャラ選択開始エラー:", startPickError);
-        } else {
-          setMatchStatus("picking");
-          setSelectedCharacterId(null);
-        }
-      }
-
-      await loadRoom();
+      setSelectedCharacterId(null);
+      await resyncGameState();
     } finally {
-      setSavingActivePlayers(false);
+      setAdvancingMatch(false);
     }
   }
 
@@ -1190,7 +1037,7 @@ export default function GamePage() {
   async function undoLastMatchResult() {
     if (!amHost || !myPlayer || undoingResult || registeringResult) return;
     if (!window.confirm(
-      "直前の試合の勝敗登録を取り消しますか？\n\n獲得マスを戻し、4人のキャラ選択と試合中の状態を復元します。\n次の試合のキャラ選択が始まっている場合は取り消せません。"
+      "直前の試合の勝敗登録を取り消しますか？\n\n獲得マスを戻し、4人のキャラ選択と試合中の状態を復元します。\n「次の試合へ」を押した後は取り消せません。"
     )) return;
 
     setUndoingResult(true);
@@ -1259,6 +1106,7 @@ export default function GamePage() {
         last_blue_picks: [],
         active_red_player_ids: [],
         active_blue_player_ids: [],
+        rotation_started_at: null,
       })
       .eq("room_code", roomCode);
 
@@ -1664,127 +1512,22 @@ export default function GamePage() {
           )
         ) : (
           <>
-            {!gameFinished && matchStatus === "selecting_players" && (
-              <section
-                style={{
-                  marginTop: 24,
-                  padding: 20,
-                  borderRadius: 16,
-                  border: "2px solid #6a1b9a",
-                  backgroundColor: "#fbf5fd",
-                }}
-              >
-                <h2 style={{ textAlign: "center", marginTop: 0 }}>
-                  ⚔️ この試合の対戦者を選択
+            {!gameFinished && (matchStatus === "selecting_players" || matchStatus === "waiting_next_match") && (
+              <section style={{ marginTop: 24, padding: 20, borderRadius: 16, border: "2px solid #6a1b9a", background: "#fbf5fd", textAlign: "center" }}>
+                <h2 style={{ marginTop: 0 }}>
+                  {matchStatus === "waiting_next_match" ? "⏸ 次の試合待ち" : "⚔️ 対戦者の自動選出"}
                 </h2>
-
-                <div
-                  style={{
-                    marginBottom: 16,
-                    textAlign: "center",
-                    color: "#555",
-                    fontWeight: 800,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  各チームのリーダーが、自分のチームから対戦者2人を決めます。
-                  <br />
-                  両チームが決定すると自動でキャラ選択へ進みます。
-                </div>
-
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 14,
-                  }}
-                >
-                  <div>
-                    <PlayerSelector
-                      title="🔴 赤チームから2人"
-                      players={redPlayers}
-                      selectedIds={draftRedPlayerIds}
-                      onToggle={(playerId) => toggleDraftPlayer("red", playerId)}
-                      accentColor="#d32f2f"
-                      canEdit={canEditTeamSelection("red")}
-                    />
-
-                    {activeRedPlayerIds.length === 2 ? (
-                      <StatusBox text="✓ 赤チーム 対戦者決定済み" />
-                    ) : canEditTeamSelection("red") ? (
-                      <button
-                        type="button"
-                        onClick={() => confirmActivePlayers("red")}
-                        disabled={savingActivePlayers || draftRedPlayerIds.length !== 2}
-                        style={{
-                          width: "100%",
-                          marginTop: 10,
-                          padding: 13,
-                          border: "none",
-                          borderRadius: 12,
-                          backgroundColor: "#d32f2f",
-                          color: "white",
-                          fontWeight: 900,
-                          cursor:
-                            !savingActivePlayers && draftRedPlayerIds.length === 2
-                              ? "pointer"
-                              : "not-allowed",
-                          opacity:
-                            !savingActivePlayers && draftRedPlayerIds.length === 2
-                              ? 1
-                              : 0.45,
-                        }}
-                      >
-                        {savingActivePlayers ? "保存中..." : "✓ 赤チームの2人を決定"}
-                      </button>
-                    ) : (
-                      <StatusBox text="赤チームリーダーの決定待ち" />
-                    )}
-                  </div>
-
-                  <div>
-                    <PlayerSelector
-                      title="🔵 青チームから2人"
-                      players={bluePlayers}
-                      selectedIds={draftBluePlayerIds}
-                      onToggle={(playerId) => toggleDraftPlayer("blue", playerId)}
-                      accentColor="#1565c0"
-                      canEdit={canEditTeamSelection("blue")}
-                    />
-
-                    {activeBluePlayerIds.length === 2 ? (
-                      <StatusBox text="✓ 青チーム 対戦者決定済み" />
-                    ) : canEditTeamSelection("blue") ? (
-                      <button
-                        type="button"
-                        onClick={() => confirmActivePlayers("blue")}
-                        disabled={savingActivePlayers || draftBluePlayerIds.length !== 2}
-                        style={{
-                          width: "100%",
-                          marginTop: 10,
-                          padding: 13,
-                          border: "none",
-                          borderRadius: 12,
-                          backgroundColor: "#1565c0",
-                          color: "white",
-                          fontWeight: 900,
-                          cursor:
-                            !savingActivePlayers && draftBluePlayerIds.length === 2
-                              ? "pointer"
-                              : "not-allowed",
-                          opacity:
-                            !savingActivePlayers && draftBluePlayerIds.length === 2
-                              ? 1
-                              : 0.45,
-                        }}
-                      >
-                        {savingActivePlayers ? "保存中..." : "✓ 青チームの2人を決定"}
-                      </button>
-                    ) : (
-                      <StatusBox text="青チームリーダーの決定待ち" />
-                    )}
-                  </div>
-                </div>
+                <p style={{ color: "#555", fontWeight: 700 }}>
+                  {matchStatus === "waiting_next_match"
+                    ? "勝敗登録が完了しました。ホストが次の試合へ進めるまでお待ちください。"
+                    : "赤・青それぞれから2人ずつ自動選出します。"}
+                </p>
+                {amHost && (
+                  <button type="button" onClick={() => void advanceMatch()} disabled={advancingMatch || registeringResult || undoingResult}
+                    style={{ padding: "14px 28px", border: "none", borderRadius: 12, background: "#6a1b9a", color: "white", fontWeight: 900, fontSize: 18, cursor: "pointer", opacity: advancingMatch ? 0.6 : 1 }}>
+                    {advancingMatch ? "選出中..." : matchStatus === "waiting_next_match" ? "▶ 次の試合へ" : "🎲 対戦者を自動選出"}
+                  </button>
+                )}
               </section>
             )}
 
@@ -2490,8 +2233,8 @@ export default function GamePage() {
                           selectedWinningTeam === "red"
                             ? "RED TEAM"
                             : "BLUE TEAM"
-                        } の勝利を登録して次の試合へ`
-                      : "✓ 勝敗を登録して次の試合へ"}
+                        } の勝利を登録`
+                      : "✓ 勝敗を登録"}
                   </button>
                 </section>
               )}
@@ -2502,7 +2245,7 @@ export default function GamePage() {
             )}
 
             {amHost && boardData && !gameFinished &&
-              (matchStatus === "picking" || matchStatus === "selecting_players") &&
+              matchStatus === "waiting_next_match" &&
               characterPicks.length === 0 && matchResults.length > 0 && (
                 <section style={{ marginTop: 18, padding: 16, border: "1px solid #ddd", borderRadius: 12 }}>
                   <button
@@ -2683,7 +2426,7 @@ function TeamMembers({
                 padding: "5px 9px",
                 borderRadius: 999,
                 backgroundColor:
-                  matchStatus === "selecting_players"
+                  (matchStatus === "selecting_players" || matchStatus === "waiting_next_match")
                     ? "#f1f1f1"
                     : !activePlayerIds.has(player.id)
                       ? "#eeeeee"
@@ -2691,7 +2434,7 @@ function TeamMembers({
                         ? "#e6f4ea"
                         : "#fff3e0",
                 color:
-                  matchStatus === "selecting_players"
+                  (matchStatus === "selecting_players" || matchStatus === "waiting_next_match")
                     ? "#666"
                     : !activePlayerIds.has(player.id)
                       ? "#777"
@@ -2699,7 +2442,7 @@ function TeamMembers({
                         ? "#137333"
                         : "#b06000",
                 border:
-                  matchStatus === "selecting_players"
+                  (matchStatus === "selecting_players" || matchStatus === "waiting_next_match")
                     ? "1px solid #ddd"
                     : !activePlayerIds.has(player.id)
                       ? "1px solid #d5d5d5"
@@ -2709,7 +2452,9 @@ function TeamMembers({
               }}
             >
               {matchStatus === "selecting_players"
-                ? "対戦者選択中"
+                ? "自動選出待ち"
+                : matchStatus === "waiting_next_match"
+                  ? "次試合待ち"
                 : !activePlayerIds.has(player.id)
                   ? "待機"
                   : readyPlayerIds.has(player.id)
