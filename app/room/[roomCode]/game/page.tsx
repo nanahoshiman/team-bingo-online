@@ -855,22 +855,11 @@ export default function GamePage() {
     setSavingPick(true);
 
     try {
-      const { error } =
-        await supabase
-          .from("character_picks")
-          .insert({
-            room_code:
-              roomCode,
-            player_id:
-              myPlayer.id,
-            player_name:
-              myPlayer.player_name,
-            team:
-              myPlayer.team,
-            character_id:
-              selectedCharacterId,
-            is_ready: true,
-          });
+      const { error } = await supabase.rpc("confirm_bingo_character_pick", {
+        p_room_code: roomCode,
+        p_player_id: myPlayer.id,
+        p_character_id: selectedCharacterId,
+      });
 
       if (error) {
         console.error(
@@ -922,11 +911,10 @@ export default function GamePage() {
     setSavingPick(true);
 
     try {
-      const { error } = await supabase
-        .from("character_picks")
-        .delete()
-        .eq("room_code", roomCode)
-        .eq("player_id", myPlayer.id);
+      const { error } = await supabase.rpc("cancel_bingo_character_pick", {
+        p_room_code: roomCode,
+        p_player_id: myPlayer.id,
+      });
 
       if (error) {
         console.error("キャラ選択解除エラー:", error);
@@ -974,11 +962,10 @@ export default function GamePage() {
       return;
     }
 
-    const { error } = await supabase
-      .from("rooms")
-      .update({ match_status: "in_match" })
-      .eq("room_code", roomCode)
-      .eq("match_status", "picking");
+    const { error } = await supabase.rpc("start_bingo_match", {
+  p_room_code: roomCode,
+  p_player_id: myPlayerId,
+});
 
     if (error) {
       console.error("試合開始エラー:", error);
@@ -1060,63 +1047,22 @@ export default function GamePage() {
   }
 
 
-  async function playAgainSameMembers() {
-    if (!amHost) return;
+ async function playAgainSameMembers() {
+  if (!amHost || !myPlayer) return;
 
-    const { error: picksError } = await supabase
-      .from("character_picks")
-      .delete()
-      .eq("room_code", roomCode);
+  const { error } = await supabase.rpc("reset_bingo_game", {
+    p_room_code: roomCode,
+    p_player_id: myPlayer.id,
+  });
 
-    if (picksError) {
-      alert(`キャラ選択のリセットに失敗しました。\n${picksError.message ?? ""}`);
-      return;
-    }
-
-    const { error: resultsError } = await supabase
-      .from("match_results")
-      .delete()
-      .eq("room_code", roomCode);
-
-    if (resultsError) {
-      alert(`獲得履歴のリセットに失敗しました。\n${resultsError.message ?? ""}`);
-      return;
-    }
-
-    const { error: playersError } = await supabase
-      .from("player")
-      .update({
-        team: null,
-        is_leader: false,
-      })
-      .eq("room_code", roomCode);
-
-    if (playersError) {
-      alert(`チーム情報のリセットに失敗しました。\n${playersError.message ?? ""}`);
-      return;
-    }
-
-    const { error: roomError } = await supabase
-      .from("rooms")
-      .update({
-        status: "team_setup",
-        board_data: null,
-        match_status: "picking",
-        last_red_picks: [],
-        last_blue_picks: [],
-        active_red_player_ids: [],
-        active_blue_player_ids: [],
-        rotation_started_at: null,
-      })
-      .eq("room_code", roomCode);
-
-    if (roomError) {
-      alert(`ゲームのリセットに失敗しました。\n${roomError.message ?? ""}`);
-      return;
-    }
-
-    window.location.href = `/room/${roomCode}/teams`;
+  if (error) {
+    console.error("ゲームリセットエラー:", error);
+    alert(`ゲームのリセットに失敗しました。\n${error.message ?? ""}`);
+    return;
   }
+
+  window.location.href = `/room/${roomCode}/teams`;
+}
 
   function returnToStart() {
     sessionStorage.removeItem("playerId");

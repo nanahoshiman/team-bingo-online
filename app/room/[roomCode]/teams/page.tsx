@@ -466,48 +466,16 @@ export default function TeamSetupPage() {
 
       ];
 
-      const results = await Promise.all(
+      const { error: confirmError } = await supabase.rpc("confirm_bingo_teams", {
+        p_room_code: roomCode,
+        p_player_id: myPlayerId,
+        p_assignments: updates,
+      });
 
-        updates.map(({ id, team, is_leader }) =>
-
-          supabase.from("player").update({ team, is_leader }).eq("id", id)
-
-        )
-
-      );
-
-      const failed = results.find((result) => result.error);
-
-      if (failed?.error) {
-
-        console.error("チーム保存エラー:", failed.error);
-
-        alert(
-
-          "チーム・リーダー情報の保存に失敗しました。playerテーブルのUPDATEポリシーを確認してください。"
-
-        );
-
+      if (confirmError) {
+        console.error("チーム確定エラー:", confirmError);
+        alert(`チーム・リーダー情報の確定に失敗しました。\n${confirmError.message}`);
         return;
-
-      }
-
-      const { error: roomError } = await supabase
-
-        .from("rooms")
-
-        .update({ status: "teams_ready" })
-
-        .eq("room_code", roomCode);
-
-      if (roomError) {
-
-        console.error("ルーム状態更新エラー:", roomError);
-
-        alert("チームは保存できましたが、ルーム状態の更新に失敗しました。");
-
-        return;
-
       }
 
       router.push(`/room/${roomCode}/game`);
