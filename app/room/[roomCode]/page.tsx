@@ -156,109 +156,54 @@ export default function RoomPage() {
 
   }
 
-  async function leaveRoom() {
+async function leaveRoom() {
+  if (!myPlayerId || isLeaving || isStarting) return;
 
-    if (!myPlayerId || isLeaving || isStarting) return;
+  const confirmed = window.confirm(
+    "ルームから退出しますか？\n退出すると参加枠が空き、同じプレイヤーとしての復帰はできなくなります。"
+  );
 
-    const confirmed = window.confirm(
+  if (!confirmed) return;
 
-      "ルームから退出しますか？\n退出すると参加枠が空き、同じプレイヤーとしての復帰はできなくなります。"
+  setIsLeaving(true);
 
-    );
+  const { error } = await supabase.rpc("leave_bingo_room", {
+    p_room_code: roomCode,
+    p_player_id: myPlayerId,
+  });
 
-    if (!confirmed) return;
-
-    setIsLeaving(true);
-
-    const leavingPlayer = players.find((player) => player.id === myPlayerId) ?? null;
-
-    const { error: deleteError } = await supabase
-
-      .from("player")
-
-      .delete()
-
-      .eq("id", myPlayerId)
-
-      .eq("room_code", roomCode);
-
-    if (deleteError) {
-
-      console.error("ルーム退出エラー:", deleteError);
-
-      alert("ルームから退出できませんでした。");
-
-      setIsLeaving(false);
-
-      return;
-
-    }
-
-    if (leavingPlayer?.is_host) {
-
-      const { data: remainingPlayers, error: remainingError } = await supabase
-
-        .from("player")
-
-        .select("id")
-
-        .eq("room_code", roomCode)
-
-        .order("created_at", { ascending: true })
-
-        .limit(1);
-
-      if (!remainingError && remainingPlayers && remainingPlayers.length > 0) {
-
-        const { error: hostError } = await supabase
-
-          .from("player")
-
-          .update({ is_host: true })
-
-          .eq("id", remainingPlayers[0].id);
-
-        if (hostError) console.error("ホスト引き継ぎエラー:", hostError);
-
-      }
-
-    }
-
-    clearStoredIdentity();
-
-    router.push("/");
-
+  if (error) {
+    console.error("ルーム退出エラー:", error);
+    alert(`ルームから退出できませんでした。\n${error.message}`);
+    setIsLeaving(false);
+    return;
   }
 
-  async function startTeamSetup() {
+  clearStoredIdentity();
+  router.push("/");
+}
 
-    if (isStarting) return;
+  
+async function startTeamSetup() {
+  if (isStarting || !myPlayerId) return;
 
-    setIsStarting(true);
+  setIsStarting(true);
 
-    const { error } = await supabase
+  const { error } = await supabase.rpc("start_bingo_team_setup", {
+    p_room_code: roomCode,
+    p_player_id: myPlayerId,
+  });
 
-      .from("rooms")
-
-      .update({ status: "team_setup" })
-
-      .eq("room_code", roomCode);
-
-    if (error) {
-
-      console.error("ルーム状態更新エラー:", error);
-
-      alert("チーム分け画面への移動に失敗しました。");
-
-      setIsStarting(false);
-
-      return;
-
-    }
-
-    router.push(`/room/${roomCode}/teams`);
-
+  if (error) {
+    console.error("チーム分け開始エラー:", error);
+    alert(`チーム分け画面への移動に失敗しました。\n${error.message}`);
+    setIsStarting(false);
+    return;
   }
+
+  router.push(`/room/${roomCode}/teams`);
+}
+
 
   useEffect(() => {
 
