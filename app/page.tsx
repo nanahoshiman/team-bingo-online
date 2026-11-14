@@ -527,24 +527,19 @@ export default function Home() {
 
             .from("player")
 
-            .select("id, player_name")
+         .select("id, player_name, auth_user_id")
 
             .eq("id", storedPlayerId)
 
             .eq("room_code", normalizedRoomCode)
 
             .maybeSingle();
-
-        if (
-
-          !existingPlayerError &&
-
-          existingPlayer &&
-
-          existingPlayer.player_name === normalizedPlayerName
-
-        ) {
-
+if (
+  !existingPlayerError &&
+  existingPlayer &&
+  existingPlayer.player_name === normalizedPlayerName &&
+  existingPlayer.auth_user_id === authUserId
+) {
           savePlayerIdentity(
 
             existingPlayer.id,
