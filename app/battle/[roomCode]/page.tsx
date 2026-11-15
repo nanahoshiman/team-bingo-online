@@ -179,68 +179,27 @@ export default function BattleLobbyPage() {
     const player1Character = shuffled[0].id;
     const player2Character = shuffled[1].id;
 
-    const player1 = players[0];
-    const player2 = players[1];
+    if (!myPlayerId) {
+  alert("プレイヤー情報を確認できませんでした。");
+  return;
+}
 
-    const { error: battleError } = await supabase
-      .from("battle_games")
-      .upsert(
-        {
-          room_code: roomCode,
+const { error: startError } = await supabase.rpc(
+  "start_all_battle_game",
+  {
+    p_room_code: roomCode,
+    p_player_id: myPlayerId,
+    p_player1_character: player1Character,
+    p_player2_character: player2Character,
+  }
+);
 
-          player1_id: player1.id,
-          player2_id: player2.id,
-
-          player1_score: 0,
-          player2_score: 0,
-
-          current_player1_character:
-            player1Character,
-          current_player2_character:
-            player2Character,
-
-          used_character_ids: [
-            player1Character,
-            player2Character,
-          ],
-
-          battle_status: "playing",
-          winner_player_id: null,
-        },
-        {
-          onConflict: "room_code",
-        }
-      );
-
-    if (battleError) {
-      console.error(
-        "全員乱闘ゲーム作成エラー:",
-        battleError
-      );
-
-      alert(
-        "ゲームデータの作成に失敗しました。"
-      );
-      return;
-    }
-
-    const { error: roomError } = await supabase
-      .from("rooms")
-      .update({
-        status: "playing",
-      })
-      .eq("room_code", roomCode)
-      .eq("game_mode", "all_battle");
-
-    if (roomError) {
-      console.error(
-        "全員乱闘開始状態更新エラー:",
-        roomError
-      );
-
-      alert("ゲームの開始に失敗しました。");
-      return;
-    }
+if (startError) {
+  console.error("全員乱闘開始エラー:", startError);
+  alert("ゲームの開始に失敗しました。");
+  return;
+}
+       
 
     router.push(`/battle/${roomCode}/game`);
   } finally {
