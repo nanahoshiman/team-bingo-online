@@ -26,6 +26,9 @@ type BattleGame = {
   used_character_ids: string[];
   battle_status: string;
   winner_player_id: string | null;
+round_number: number;
+match_session_id: string;
+
 };
 
 export default function BattleGamePage() {
@@ -99,20 +102,22 @@ export default function BattleGamePage() {
   async function loadBattleGame() {
     const { data, error } = await supabase
       .from("battle_games")
-      .select(
-        `
-        room_code,
-        player1_id,
-        player2_id,
-        player1_score,
-        player2_score,
-        current_player1_character,
-        current_player2_character,
-        used_character_ids,
-        battle_status,
-        winner_player_id
-        `
-      )
+     .select(
+  `
+    room_code,
+    player1_id,
+    player2_id,
+    player1_score,
+    player2_score,
+    current_player1_character,
+    current_player2_character,
+    used_character_ids,
+    battle_status,
+    winner_player_id,
+    round_number,
+    match_session_id
+  `
+)
       .eq("room_code", roomCode)
       .maybeSingle();
 
@@ -333,14 +338,15 @@ export default function BattleGamePage() {
     battleGame?.battle_status,
   ]);
 
-  async function registerWinner(
+   async function registerWinner(
     winner: "player1" | "player2"
   ) {
     if (
       !battleGame ||
+      !myPlayerId ||
       isSubmittingResult ||
       isRoulette ||
-      battleGame.battle_status === "finished"
+      battleGame.battle_status !== "playing"
     ) {
       return;
     }
@@ -348,175 +354,25 @@ export default function BattleGamePage() {
     setIsSubmittingResult(true);
 
     try {
-      const nextPlayer1Score =
-        battleGame.player1_score +
-        (winner === "player1" ? 1 : 0);
-
-      const nextPlayer2Score =
-        battleGame.player2_score +
-        (winner === "player2" ? 1 : 0);
-
-      const usedIds =
-        battleGame.used_character_ids ?? [];
-
-      const remainingCharacters =
-        characters.filter(
-          (character) =>
-            !usedIds.includes(character.id)
-        );
-
-      const remainingMatches = Math.floor(
-        remainingCharacters.length / 2
-      );
-
-      const scoreDifference = Math.abs(
-        nextPlayer1Score -
-          nextPlayer2Score
-      );
-
-      const gameIsDecided =
-        scoreDifference > remainingMatches;
-
-      if (gameIsDecided) {
-        const winnerPlayerId =
-          nextPlayer1Score >
-          nextPlayer2Score
-            ? battleGame.player1_id
-            : battleGame.player2_id;
-
-        const { error } = await supabase
-          .from("battle_games")
-          .update({
-            player1_score:
-              nextPlayer1Score,
-            player2_score:
-              nextPlayer2Score,
-            battle_status: "finished",
-            winner_player_id:
-              winnerPlayerId,
-          })
-          .eq("room_code", roomCode);
-
-        if (error) {
-          console.error(
-            "ゲーム終了処理エラー:",
-            error
-          );
-
-          alert(
-            "ゲーム終了処理に失敗しました。"
-          );
-
-          return;
+      const { error } = await supabase.rpc(
+        "register_all_battle_winner",
+        {
+          p_room_code: roomCode,
+          p_player_id: myPlayerId,
+          p_winner: winner,
+          p_expected_round_number:
+            battleGame.round_number,
+          p_match_session_id:
+            battleGame.match_session_id,
         }
-
-        await loadBattleGame();
-        return;
-      }
-
-      if (
-        remainingCharacters.length < 2
-      ) {
-        if (
-          nextPlayer1Score !==
-          nextPlayer2Score
-        ) {
-          const winnerPlayerId =
-            nextPlayer1Score >
-            nextPlayer2Score
-              ? battleGame.player1_id
-              : battleGame.player2_id;
-
-          const { error } =
-            await supabase
-              .from("battle_games")
-              .update({
-                player1_score:
-                  nextPlayer1Score,
-                player2_score:
-                  nextPlayer2Score,
-                battle_status:
-                  "finished",
-                winner_player_id:
-                  winnerPlayerId,
-              })
-              .eq(
-                "room_code",
-                roomCode
-              );
-
-          if (error) {
-            console.error(
-              "最終試合終了処理エラー:",
-              error
-            );
-
-            alert(
-              "ゲーム終了処理に失敗しました。"
-            );
-
-            return;
-          }
-
-          await loadBattleGame();
-          return;
-        }
-
-        alert(
-          "使用可能キャラを使い切りましたが、スコアが同点です。"
-        );
-
-        return;
-      }
-
-      const shuffled = [
-        ...remainingCharacters,
-      ].sort(
-        () => Math.random() - 0.5
       );
-
-      const nextPlayer1Character =
-        shuffled[0].id;
-
-      const nextPlayer2Character =
-        shuffled[1].id;
-
-      const nextUsedIds = [
-        ...usedIds,
-        nextPlayer1Character,
-        nextPlayer2Character,
-      ];
-
-      const { error } = await supabase
-        .from("battle_games")
-        .update({
-          player1_score:
-            nextPlayer1Score,
-
-          player2_score:
-            nextPlayer2Score,
-
-          current_player1_character:
-            nextPlayer1Character,
-
-          current_player2_character:
-            nextPlayer2Character,
-
-          used_character_ids:
-            nextUsedIds,
-        })
-        .eq("room_code", roomCode);
 
       if (error) {
-        console.error(
-          "勝敗登録エラー:",
-          error
-        );
-
+        console.error("勝敗登録エラー:", error);
         alert(
-          "勝敗の登録に失敗しました。"
+          "勝敗の登録に失敗しました。画面を更新して再確認してください。"
         );
-
+        await loadBattleGame();
         return;
       }
 
@@ -526,10 +382,12 @@ export default function BattleGamePage() {
     }
   }
 
-  async function restartGame() {
+   async function restartGame() {
     if (
       !battleGame ||
+      !myPlayerId ||
       isRestarting ||
+      battleGame.battle_status !== "finished" ||
       characters.length < 2
     ) {
       return;
@@ -538,50 +396,31 @@ export default function BattleGamePage() {
     setIsRestarting(true);
 
     try {
-      const shuffled = [
-        ...characters,
-      ].sort(
+      const shuffled = [...characters].sort(
         () => Math.random() - 0.5
       );
 
-      const player1Character =
-        shuffled[0].id;
+      const player1Character = shuffled[0].id;
+      const player2Character = shuffled[1].id;
 
-      const player2Character =
-        shuffled[1].id;
-
-      const { error } = await supabase
-        .from("battle_games")
-        .update({
-          player1_score: 0,
-          player2_score: 0,
-
-          current_player1_character:
-            player1Character,
-
-          current_player2_character:
-            player2Character,
-
-          used_character_ids: [
-            player1Character,
-            player2Character,
-          ],
-
-          battle_status: "playing",
-          winner_player_id: null,
-        })
-        .eq("room_code", roomCode);
+      const { error } = await supabase.rpc(
+        "restart_all_battle_game",
+        {
+          p_room_code: roomCode,
+          p_player_id: myPlayerId,
+          p_player1_character: player1Character,
+          p_player2_character: player2Character,
+          p_match_session_id:
+            battleGame.match_session_id,
+        }
+      );
 
       if (error) {
-        console.error(
-          "再戦開始エラー:",
-          error
-        );
-
+        console.error("再戦開始エラー:", error);
         alert(
-          "再戦の開始に失敗しました。"
+          "再戦の開始に失敗しました。画面を更新して再確認してください。"
         );
-
+        await loadBattleGame();
         return;
       }
 
@@ -590,7 +429,6 @@ export default function BattleGamePage() {
       setIsRestarting(false);
     }
   }
-
   if (loading) {
     return (
       <main
